@@ -2,18 +2,7 @@ import { Card } from "@/components/ui/card";
 import { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 import { ArrowRight, CheckCircle } from "lucide-react";
-
-interface DTNBundle {
-  bundle_id: string;
-  bundle_id_short: string;
-  priority: "EXPEDITED" | "NORMAL" | "BULK";
-  status: string;
-  age_seconds: number;
-  hops: string[];
-  current_custodian: string;
-  created_at: string;
-  delivered_at?: string | null;
-}
+import { DTNBundle } from "@/types/dtnBundle";
 
 interface Station {
   id: string;

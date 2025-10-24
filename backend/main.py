@@ -1,29 +1,22 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+import asyncio
 import json
 from datetime import datetime, timezone
 from collections import deque
 from tle_fetcher import TLEFetcher
 from orbital_tracker import OrbitalTracker
 from link_budget_calculator import LinkBudgetCalculator
-from dtn_bundle_manager import DTNBundleManager, BundlePriority  # NEW
+from dtn_bundle_manager import DTNBundleManager, BundlePriority
 
 app = FastAPI()
-
-class BundleCreateRequest(BaseModel):
-    source_station: str
-    destination: str = "ISS"
-    payload: str
-    priority: str = "NORMAL"
-    ttl_hours: int = 24
 
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,7 +27,6 @@ tle_fetcher = TLEFetcher()
 link_budget_calc = LinkBudgetCalculator()
 
 # Ground stations
-# Multiple ground stations around the world
 GROUND_STATIONS = [
     {"id": "toronto", "name": "Toronto", "lat": 43.6532, "lon": -79.3832},
     {"id": "london", "name": "London", "lat": 51.5074, "lon": -0.1278},
@@ -50,7 +42,15 @@ GROUND_STATIONS = [
 MIN_ELEVATION_FOR_VISIBILITY = -5.0
 
 # Initialize DTN Bundle Manager
-dtn_manager = DTNBundleManager(GROUND_STATIONS)  # NEW
+dtn_manager = DTNBundleManager(GROUND_STATIONS)
+
+# Pydantic models for API
+class BundleCreateRequest(BaseModel):
+    source_station: str
+    destination: str = "ISS"
+    payload: str
+    priority: str = "NORMAL"
+    ttl_hours: int = 24
 
 @app.get("/")
 async def root():
@@ -108,7 +108,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
         await websocket.send_json({
             "type": "connection",
             "status": "connected",
-            "message": "Orbital tracking with DTN initialized",
+            "message": "Orbital tracking with realistic DTN transmission initialized",
             "stations": GROUND_STATIONS,
             "min_elevation": MIN_ELEVATION_FOR_VISIBILITY
         })
@@ -117,14 +117,17 @@ async def orbital_tracking_websocket(websocket: WebSocket):
         orbital_path = tracker.get_orbital_path(minutes=95, points=150)
         last_path_update = datetime.now(timezone.utc)
         
-        print("🚀 Starting orbital tracking with DTN...")
+        print("🚀 Starting orbital tracking with realistic DTN transmission...")
         
         iteration = 0
         current_active_station = None
+        last_update_time = datetime.now(timezone.utc)
         
         while True:
             iteration += 1
             now = datetime.now(timezone.utc)
+            delta_time = (now - last_update_time).total_seconds()
+            last_update_time = now
             
             # Get ISS position
             iss_position = tracker.get_current_position()
@@ -168,7 +171,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 if is_visible:
                     visible_stations.append(station_data)
             
-            # Determine active station
+            # Determine active station (highest elevation among visible)
             if visible_stations:
                 visible_stations.sort(key=lambda s: s["look_angles"]["elevation"], reverse=True)
                 new_active_station = visible_stations[0]["id"]
@@ -181,52 +184,129 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 stations_data.sort(key=lambda s: s["next_pass_minutes"] if s["next_pass_minutes"] > 0 else 999999)
                 current_active_station = None
             
-
-            # Process DTN bundles based on contacts
+            # Build station contact state map
+            station_contact_states = {}
             for station_data in stations_data:
-                # Find best next hop for forwarding
-                next_hop_station = None
+                station_contact_states[station_data["id"]] = station_data["is_visible"]
+            
+            # Update ongoing transmissions (realistic time-based progress)
+            completed_bundles = dtn_manager.update_transmissions(
+                delta_time,
+                station_contact_states
+            )
+            
+            # Complete transmissions and generate ACKs
+            for bundle_id in completed_bundles:
+                ack = dtn_manager.complete_transmission(bundle_id)
+                if ack:
+                    dtn_manager.queue_ack(ack)
+            
+            # Process DTN bundles - start new transmissions or forward
+            for station_data in stations_data:
+                station_id = station_data["id"]
+                is_visible = station_data["is_visible"]  # This station's visibility
                 
-                if not station_data["is_visible"]:
-                    # Get current station's next pass time
+                # Get station's queue
+                queue = dtn_manager.station_queues.get(station_id, [])
+                
+                if not queue:
+                    continue  # No bundles to process
+                
+                # Check if this station is already transmitting
+                is_transmitting = any(
+                    t.from_station == station_id 
+                    for t in dtn_manager.active_transmissions.values()
+                )
+                
+                if is_transmitting:
+                    continue  # Already transmitting, don't start another
+                
+                # Case 1: This station can see ISS - transmit directly
+                if is_visible:
+                    # Calculate data rate for this specific station
+                    radial_velocity_data = tracker.calculate_radial_velocity(
+                        station_data["lat"],
+                        station_data["lon"]
+                    )
+                    
+                    link_budget = link_budget_calc.calculate_link_budget(
+                        station_data["look_angles"]["range_km"],
+                        station_data["look_angles"]["elevation"],
+                        radial_velocity_data["radial_velocity_kmps"]
+                    )
+                    
+                    data_rate_bps = link_budget.get("data_rate_bps", 0)
+                    
+                    if data_rate_bps > 0:
+                        # Start transmission of next bundle in queue to ISS
+                        next_bundle_id = queue[0]
+                        print(f"🛰️  {station_id.upper()} has ISS contact - transmitting directly to ISS")
+                        dtn_manager.start_transmission(
+                            next_bundle_id,
+                            station_id,
+                            "ISS",
+                            data_rate_bps
+                        )
+                
+                # Case 2: This station can't see ISS
+                else:
+                    # Check if we should forward to currently active station OR wait for a better pass
+                    
+                    # First check: Is there a station that can see ISS RIGHT NOW?
+                    if current_active_station and current_active_station != station_id:
+                        # There's an active station
+                        first_bundle_id = queue[0]
+                        bundle = dtn_manager.bundles.get(first_bundle_id)
+                        visited_stations = bundle.hops if bundle else []
+                        
+                        # Only forward if we haven't already visited the active station
+                        if current_active_station not in visited_stations:
+                            print(f"📨 {station_id.upper()} forwarding to ACTIVE station {current_active_station.upper()} for immediate ISS contact")
+                            
+                            # Use ground link (fast, 100 Mbps)
+                            ground_link_bps = 100_000_000
+                            dtn_manager.start_transmission(
+                                first_bundle_id,
+                                station_id,
+                                current_active_station,
+                                ground_link_bps
+                            )
+                            continue  # Don't check for other forwarding options
+                    
+                    # Second check: No active station, look for stations with upcoming passes
                     current_station_next_pass = station_data["next_pass_minutes"]
                     
-                    # Only consider forwarding if current station has a pass scheduled
                     if current_station_next_pass > 0:
                         # Get bundle hops to avoid loops
-                        queue = dtn_manager.station_queues.get(station_data["id"], [])
-                        
-                        if queue:
-                            # Check first bundle's hops to avoid routing loops
-                            first_bundle_id = queue[0]
-                            bundle = dtn_manager.bundles.get(first_bundle_id)
-                            visited_stations = bundle.hops if bundle else []
-                        else:
-                            visited_stations = []
+                        first_bundle_id = queue[0]
+                        bundle = dtn_manager.bundles.get(first_bundle_id)
+                        visited_stations = bundle.hops if bundle else []
                         
                         # Find stations with SOONER passes than current station
                         better_stations = [
                             s for s in stations_data 
-                            if s["id"] != station_data["id"] 
+                            if s["id"] != station_id 
                             and s["id"] not in visited_stations  # Avoid loops
                             and s["next_pass_minutes"] > 0  # Has upcoming pass
                             and s["next_pass_minutes"] < current_station_next_pass  # SOONER than us
                         ]
                         
                         if better_stations:
-                            # Forward to the station with the soonest pass
+                            # Forward to station with soonest pass
                             better_stations.sort(key=lambda s: s["next_pass_minutes"])
                             next_hop_station = better_stations[0]["id"]
-                        # else: No better option, keep bundle here and wait for our own pass
-                
-                dtn_manager.process_contact(
-                    station_data["id"],
-                    station_data["is_visible"],
-                    next_hop_station
-                )
-
-            # Get and broadcast custody ACKs
-            pending_acks = dtn_manager.get_pending_acks()
+                            
+                            print(f"📨 {station_id.upper()} forwarding to {next_hop_station.upper()} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
+                            
+                            # Use ground link (fast, 100 Mbps)
+                            ground_link_bps = 100_000_000
+                            dtn_manager.start_transmission(
+                                first_bundle_id,
+                                station_id,
+                                next_hop_station,
+                                ground_link_bps
+                            )
+                        # else: No better option - keep bundle here and wait for our own pass
             
             # Cleanup expired bundles every 60 seconds
             if iteration % 60 == 0:
@@ -285,7 +365,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     "doppler_shift_khz": link_budget["doppler_shift_khz"],
                     "snr_db": link_budget["snr_db"],
                     "range_km": link_budget["range_km"],
-                    "radial_velocity_kmps": radial_velocity_data["radial_velocity_kmps"]
+                    "radial_velocity_kmps": radial_velocity_data["radial_velocity_kmps"],
+                    "data_rate_bps": link_budget.get("data_rate_bps", 0),
+                    "data_rate_kbps": link_budget.get("data_rate_kbps", 0),
                 }
                 
                 link_budget_history.append({
@@ -301,11 +383,19 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     "doppler_shift_khz": 0.0,
                     "snr_db": -50.0,
                     "range_km": 0.0,
-                    "radial_velocity_kmps": 0.0
+                    "radial_velocity_kmps": 0.0,
+                    "data_rate_bps": 0.0,
+                    "data_rate_kbps": 0.0,
                 }
             
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()
+            
+            # Get active transmissions
+            active_transmissions = dtn_manager.get_active_transmissions()
+            
+            # Get custody ACKs
+            pending_acks = dtn_manager.get_pending_acks()
             
             # Prepare data packet
             data = {
@@ -321,7 +411,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "link_status": link_status,
                 "link_budget_history": list(link_budget_history),
                 "dtn_queues": dtn_queues,
-                "custody_acks": pending_acks  # NEW: Add ACKs to data stream
+                "custody_acks": pending_acks,
+                "active_transmissions": active_transmissions
             }
             
             # Send data
@@ -337,7 +428,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
         import traceback
         traceback.print_exc()
 
-# Replace the endpoint with both OPTIONS and POST handlers
 @app.options("/api/bundle/create")
 async def bundle_create_options():
     """Handle CORS preflight for bundle creation"""

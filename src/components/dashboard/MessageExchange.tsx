@@ -4,19 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Send, CheckCircle, XCircle, Clock, Package, Zap } from "lucide-react";
 import { useState, useEffect } from "react";
 import ProtocolStack from "./ProtocolStack";
-
-interface DTNBundle {
-  bundle_id: string;
-  bundle_id_short: string;
-  source_station: string;
-  destination_station: string;
-  payload: string;
-  priority: "EXPEDITED" | "NORMAL" | "BULK";
-  status: "QUEUED" | "TRANSMITTING" | "DELIVERED" | "FORWARDED" | "EXPIRED";
-  created_at: string;
-  ttl_hours: number;
-  age_seconds: number;
-}
+import { DTNBundle } from "@/types/dtnBundle";
 
 interface CustodyAck {
   type: "custody_ack";
@@ -322,7 +310,20 @@ const MessageExchange = ({
             </button>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            {/* Station indicator */}
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <div 
+                className="w-2 h-2 rounded-full" 
+                style={{ backgroundColor: stationColor }}
+              />
+              <span className="text-secondary">
+                Controlling: <span className="text-foreground font-semibold uppercase">
+                  {activeStationId}
+                </span>
+              </span>
+            </div>
+            
             {mode === "TCP" && (
               <div className={`flex items-center gap-1 text-xs font-mono ${
                 isTorontoActive ? "text-success" : "text-destructive"
@@ -336,7 +337,7 @@ const MessageExchange = ({
             {mode === "DTN" && (
               <div className="flex items-center gap-1 text-xs font-mono text-cyan-500">
                 <Package className="w-3 h-3" />
-                Queue: {queuedBundles.length}
+                Network Queue: {queuedBundles.length} bundles
               </div>
             )}
           </div>

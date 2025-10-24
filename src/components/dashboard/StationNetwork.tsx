@@ -3,21 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, ChevronRight, ArrowRight, Package, Zap } from "lucide-react";
 import { GroundStation } from "@/types/groundStation";
 import { useState, useEffect } from "react";
-
-interface DTNBundle {
-  bundle_id: string;
-  bundle_id_short: string;
-  source_station: string;
-  destination_station: string;
-  payload: string;
-  priority: "EXPEDITED" | "NORMAL" | "BULK";
-  status: "QUEUED" | "TRANSMITTING" | "DELIVERED" | "FORWARDED" | "EXPIRED";
-  created_at: string;
-  ttl_hours: number;
-  current_custodian: string;
-  forwarded_to: string | null;
-  age_seconds: number;
-}
+import { DTNBundle } from "@/types/dtnBundle";
 
 interface StationNetworkProps {
   stations: GroundStation[];
@@ -25,8 +11,9 @@ interface StationNetworkProps {
   onAddStation?: () => void;
   dtnQueues?: Record<string, DTNBundle[]>;
   visibleStationsCount?: number;
-  handoffInProgress?: boolean;  // NEW
-  activeStationId?: string;      // NEW
+  handoffInProgress?: boolean;
+  activeStationId?: string;
+  selectedStationId?: string; // NEW
 }
 
 const StationNetwork = ({ 
@@ -35,8 +22,9 @@ const StationNetwork = ({
   onAddStation,
   dtnQueues = {},
   visibleStationsCount = 0,
-  handoffInProgress = false,    // NEW
-  activeStationId = ''          // NEW
+  handoffInProgress = false,
+  activeStationId = '',
+  selectedStationId = '' // NEW
 }: StationNetworkProps) => {
   const [expandedStation, setExpandedStation] = useState<string | null>(null);
   const [highlightStation, setHighlightStation] = useState<string | null>(null);
@@ -124,13 +112,16 @@ const StationNetwork = ({
           const stationQueue = dtnQueues[station.id] || [];
           const nextHandoff = getNextHandoffStation(station);
           const isHighlighted = highlightStation === station.id;
+          const isSelected = selectedStationId === station.id; // NEW
 
           return (
             <div
               key={station.id}
               className={`rounded border transition-all ${
                 isHighlighted
-                  ? 'border-amber-500 bg-amber-500/20 shadow-lg animate-pulse'  // NEW: Handoff highlight
+                  ? 'border-amber-500 bg-amber-500/20 shadow-lg animate-pulse'
+                  : isSelected // NEW: Highlight selected station
+                  ? 'border-primary bg-primary/10'
                   : station.isActive
                   ? 'border-primary/50 bg-primary/5'
                   : 'border-border hover:border-border/60 hover:bg-muted/50'
@@ -142,6 +133,15 @@ const StationNetwork = ({
                   <Zap className="w-3 h-3 text-amber-500 animate-pulse" />
                   <span className="text-[10px] font-mono font-semibold text-amber-500 uppercase">
                     Handoff Active
+                  </span>
+                </div>
+              )}
+
+              {/* NEW: Selected Station Indicator */}
+              {isSelected && (
+                <div className="flex items-center gap-2 bg-primary/30 px-2 py-1 border-b border-primary/50">
+                  <span className="text-[10px] font-mono font-semibold text-primary uppercase">
+                    ✓ Controlling This Station
                   </span>
                 </div>
               )}
@@ -311,6 +311,7 @@ const StationNetwork = ({
                             {bundle.payload}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5 text-[9px] text-secondary">
+                            <span>Size: {bundle.size_bytes} bytes ({(bundle.size_bytes / 1024).toFixed(1)} KB)</span>
                             <span>Age: {Math.floor(bundle.age_seconds)}s</span>
                             <span>TTL: {bundle.ttl_hours}h</span>
                             {bundle.forwarded_to && (

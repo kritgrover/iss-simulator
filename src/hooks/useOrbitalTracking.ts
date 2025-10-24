@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useWebSocket } from './useWebSocket';
+import { DTNBundle } from '@/types/dtnBundle';
 
 interface ISSPosition {
   latitude: number;
@@ -72,23 +73,6 @@ interface LinkBudgetHistoryPoint {
   signal_strength_dbm: number;
 }
 
-interface DTNBundle {
-  bundle_id: string;
-  bundle_id_short: string;
-  source_station: string;
-  destination_station: string;
-  payload: string;
-  priority: "EXPEDITED" | "NORMAL" | "BULK";
-  status: "QUEUED" | "TRANSMITTING" | "DELIVERED" | "FORWARDED" | "EXPIRED";
-  created_at: string;
-  ttl_hours: number;
-  current_custodian: string;
-  forwarded_to: string | null;
-  delivered_at: string | null;
-  hops: string[];
-  age_seconds: number;
-}
-
 interface CustodyAck {
   type: "custody_ack";
   bundle_id: string;
@@ -97,6 +81,18 @@ interface CustodyAck {
   to_station: string;
   ack_type: "custody_accepted" | "delivered";
   timestamp: string;
+}
+
+interface ActiveTransmission {
+  bundle_id: string;
+  bundle_id_short: string;
+  from_station: string;
+  to_station: string;
+  progress_percent: number;
+  bytes_transmitted: number;
+  size_bytes: number;
+  data_rate_kbps: number;
+  time_remaining_sec: number;
 }
 
 export interface OrbitalData {
@@ -112,6 +108,7 @@ export interface OrbitalData {
   link_budget_history: LinkBudgetHistoryPoint[];
   dtn_queues: Record<string, DTNBundle[]>;
   custody_acks: CustodyAck[];
+  active_transmissions: ActiveTransmission[];
 }
 
 export const useOrbitalTracking = () => {

@@ -22,9 +22,34 @@ class LinkBudgetCalculator:
     # System parameters
     CABLE_LOSS_DB = 2.0  # dB (coax cable losses)
     MISC_LOSSES_DB = 3.0  # dB (connectors, weather, etc.)
-    
+
+    BANDWIDTH_HZ = 12500 # 12.5 kHz for amateur radio
+     
     def __init__(self):
         pass
+    
+    def calculate_data_rate(self, snr_db: float) -> float:
+        """
+        Calculate achievable data rate based on SNR
+        Uses Shannon-Hartley theorem: C = B * log2(1 + SNR)
+        where B is bandwidth and SNR is signal-to-noise ratio (linear)
+        
+        Returns: data rate in bits per second
+        """
+        if snr_db < 0:
+            return 0.0
+        
+        # Convert SNR from dB to linear scale
+        snr_linear = 10 ** (snr_db / 10)
+        
+        # Shannon capacity in bits/second
+        capacity_bps = self.BANDWIDTH_HZ * math.log2(1 + snr_linear)
+        
+        # Apply practical efficiency factor (70-80% of theoretical due to modulation overhead)
+        efficiency = 0.75
+        practical_rate_bps = capacity_bps * efficiency
+        
+        return float(practical_rate_bps)
     
     def calculate_free_space_path_loss(self, distance_km: float, frequency_mhz: float) -> float:
         """
@@ -127,7 +152,9 @@ class LinkBudgetCalculator:
         # 7. Calculate latency (speed of light delay)
         latency_ms = (range_km / self.SPEED_OF_LIGHT) * 1000
         
-        # 8. Determine connection state
+        # 8. Calculate data rate
+        data_rate_bps = self.calculate_data_rate(snr_db)
+        
         if elevation_degrees < 0:
             connection_state = "IDLE"
         elif snr_db >= 10:
@@ -148,5 +175,7 @@ class LinkBudgetCalculator:
             "fspl_db": round(fspl, 2),
             "atmospheric_loss_db": round(atm_loss, 2),
             "noise_floor_dbm": round(noise_floor_dbm, 2),
-            "radial_velocity_kmps": round(radial_velocity_kmps, 3)
+            "radial_velocity_kmps": round(radial_velocity_kmps, 3),
+            "data_rate_bps": round(data_rate_bps, 2),
+            "data_rate_kbps": round(data_rate_bps / 1000, 2)
         }

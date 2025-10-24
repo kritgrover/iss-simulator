@@ -8,15 +8,18 @@ import MessageExchange from "@/components/dashboard/MessageExchange";
 import StationNetwork from "@/components/dashboard/StationNetwork";
 import LinkBudgetChart from "@/components/analytics/LinkBudgetChart";
 import TrafficFlowMonitor from "@/components/analytics/TrafficFlowMonitor";
+import TransmissionMonitor from "@/components/dashboard/TransmissionMonitor";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useState, useEffect } from "react";
 import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
+import { DTNBundle } from '@/types/dtnBundle';
 
 const Index = () => {
   const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
 
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
-  const [activeStationId, setActiveStationId] = useState('toronto');
+  const [activeStationId, setActiveStationId] = useState('toronto'); // Which station sees ISS
+  const [selectedStationId, setSelectedStationId] = useState('toronto'); // Which station user is controlling
   const [handoffCount, setHandoffCount] = useState(0);
   const [handoffInProgress, setHandoffInProgress] = useState(false);
 
@@ -40,7 +43,7 @@ const Index = () => {
         })
       );
 
-      // Update active station and detect handoff
+      // Update active station (which station has ISS) and detect handoff
       if (orbitalData.active_station_id && orbitalData.active_station_id !== activeStationId) {
         const oldStation = activeStationId;
         setActiveStationId(orbitalData.active_station_id);
@@ -57,13 +60,15 @@ const Index = () => {
   }, [orbitalData, activeStationId]);
 
   const handleStationSelect = (stationId: string) => {
-    setActiveStationId(stationId);
+    setSelectedStationId(stationId); // User manually selects which station to control
   };
 
   const activeStation = stations.find(s => s.id === activeStationId);
+  const selectedStation = stations.find(s => s.id === selectedStationId);
   
-  // Get active station data from orbital data with proper null checking
+  // Get data for both active and selected stations
   const activeStationData = orbitalData?.stations?.find(s => s.id === activeStationId);
+  const selectedStationData = orbitalData?.stations?.find(s => s.id === selectedStationId);
   
   return (
     <div className="min-h-screen flex flex-col">
@@ -77,7 +82,7 @@ const Index = () => {
               <div className="flex-1 min-h-0">
                 <GlobeView 
                   stations={stations}
-                  activeStationId={activeStationId}
+                  activeStationId={activeStationId} // Show which station has ISS
                   orbitalData={orbitalData}
                 />
               </div>
@@ -93,25 +98,33 @@ const Index = () => {
 
           <ResizableHandle withHandle className="w-1 bg-muted hover:bg-primary/30 transition-colors" />
 
-          {/* Center Panel - Communication Dashboard (MORE SPACE NOW) */}
+          {/* Center Panel - Communication Dashboard */}
           <ResizablePanel defaultSize={42} minSize={30}>
             <div className="h-full border-r border-border p-4 space-y-4 overflow-y-auto">
               <LinkStatus linkStatus={orbitalData?.link_status ?? null} />
+
+              {orbitalData?.active_transmissions && orbitalData.active_transmissions.length > 0 && (
+                <TransmissionMonitor 
+                  activeTransmissions={orbitalData.active_transmissions}
+                />
+              )}
+
               <MessageExchange 
-                activeStationId={activeStationId}
-                stationColor={activeStation?.color || '#4ade80'}
+                activeStationId={selectedStationId}
+                stationColor={selectedStation?.color || '#4ade80'}
                 handoffCount={handoffCount}
-                linkStatus={orbitalData?.link_status ?? null}
-                dtnQueues={orbitalData?.dtn_queues ?? {}}
+                linkStatus={selectedStationData?.is_visible ? orbitalData?.link_status : null}
+                dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 custodyAcks={orbitalData?.custody_acks ?? []}
               />
               <StationNetwork 
                 stations={stations}
                 onStationSelect={handleStationSelect}
-                dtnQueues={orbitalData?.dtn_queues ?? {}}
+                dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 visibleStationsCount={orbitalData?.visible_stations_count ?? 0}
                 handoffInProgress={handoffInProgress}
                 activeStationId={activeStationId}
+                selectedStationId={selectedStationId}
               />
             </div>
           </ResizablePanel>
@@ -128,7 +141,7 @@ const Index = () => {
               />
               <TrafficFlowMonitor 
                 linkStatus={orbitalData?.link_status ?? null}
-                allQueues={orbitalData?.dtn_queues ?? {}}
+                allQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 stations={orbitalData?.stations ?? []}
                 isConnected={orbitalData?.link_status?.connection_state === "ACQUIRED" || orbitalData?.link_status?.connection_state === "DEGRADED"}
               />

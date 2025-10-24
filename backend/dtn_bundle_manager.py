@@ -30,6 +30,14 @@ class DTNBundle:
     forwarded_to: Optional[str] = None
     delivered_at: Optional[datetime] = None
     hops: List[str] = field(default_factory=list)
+    size_bytes: int = 0  # NEW: Bundle size
+    
+    def __post_init__(self):
+        if self.size_bytes == 0:
+            # Calculate size based on payload + headers
+            payload_size = len(self.payload.encode('utf-8'))
+            header_overhead = 200  # DTN header overhead (100-500 bytes typical)
+            self.size_bytes = payload_size + header_overhead
     
     def is_expired(self) -> bool:
         """Check if bundle has exceeded TTL"""
@@ -51,8 +59,34 @@ class DTNBundle:
             "forwarded_to": self.forwarded_to,
             "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
             "hops": self.hops,
-            "age_seconds": (datetime.now(timezone.utc) - self.created_at).total_seconds()
+            "age_seconds": (datetime.now(timezone.utc) - self.created_at).total_seconds(),
+            "size_bytes": self.size_bytes  # NEW
         }
+
+@dataclass
+class BundleTransmission:
+    """Track ongoing bundle transmission"""
+    bundle_id: str
+    from_station: str
+    to_station: str
+    started_at: datetime
+    size_bytes: int
+    data_rate_bps: float
+    expected_completion: datetime
+    bytes_transmitted: float = 0
+    
+    def is_complete(self) -> bool:
+        return self.bytes_transmitted >= self.size_bytes
+    
+    def progress_percent(self) -> float:
+        return min(100.0, (self.bytes_transmitted / self.size_bytes) * 100)
+    
+    def estimated_time_remaining(self) -> float:
+        """Return estimated seconds remaining"""
+        remaining_bytes = self.size_bytes - self.bytes_transmitted
+        if self.data_rate_bps > 0:
+            return remaining_bytes / (self.data_rate_bps / 8)
+        return 0
 
 class DTNBundleManager:
     """Manages DTN bundles across ground station network"""
@@ -61,7 +95,8 @@ class DTNBundleManager:
         self.stations = {s["id"]: s["name"] for s in stations}
         self.bundles: Dict[str, DTNBundle] = {}
         self.station_queues: Dict[str, List[str]] = {sid: [] for sid in self.stations.keys()}
-        self.pending_acks: List[Dict] = []  # NEW: Queue of ACKs to send
+        self.pending_acks: List[Dict] = []
+        self.active_transmissions: Dict[str, BundleTransmission] = {}  # NEW
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
     
@@ -91,41 +126,144 @@ class DTNBundleManager:
         self.bundles[bundle_id] = bundle
         self.station_queues[source_station].append(bundle_id)
         
-        print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}...")
+        print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}... (size: {bundle.size_bytes} bytes)")
         return bundle
     
-    def transmit_bundle(self, bundle_id: str, from_station: str, to_station: str) -> Optional[Tuple[bool, Optional[Dict]]]:
+    def start_transmission(self, bundle_id: str, from_station: str, 
+                      to_station: str, data_rate_bps: float) -> Optional[BundleTransmission]:
         """
-        Transmit bundle from one station to another (or ISS)
-        Returns: (success, ack_message) where ack_message is dict if ACK should be sent
+        Start transmitting a bundle
+        Returns transmission object if started, None if can't start
         """
         if bundle_id not in self.bundles:
             return None
         
         bundle = self.bundles[bundle_id]
         
-        # Prevent forwarding loops - don't send to stations we've already visited
+        # Check if already transmitting
+        if bundle_id in self.active_transmissions:
+            return self.active_transmissions[bundle_id]
+        
+        # Prevent forwarding loops
         if to_station in bundle.hops:
             print(f"⚠️  Bundle {bundle_id[:8]} loop detected! Not forwarding {from_station} → {to_station}")
-            return (False, None)
+            return None
         
-        # Mark as transmitting
+        # Store where we're forwarding to (temporarily)
+        bundle.forwarded_to = to_station
+        
+        # Calculate transmission time
+        transmission_time_sec = bundle.size_bytes / (data_rate_bps / 8)
+        
+        now = datetime.now(timezone.utc)
+        expected_completion = now + timedelta(seconds=transmission_time_sec)
+        
+        # Create transmission record
+        transmission = BundleTransmission(
+            bundle_id=bundle_id,
+            from_station=from_station,
+            to_station=to_station,
+            started_at=now,
+            size_bytes=bundle.size_bytes,
+            data_rate_bps=data_rate_bps,
+            expected_completion=expected_completion,
+            bytes_transmitted=0
+        )
+        
+        # Mark bundle as transmitting
         bundle.status = BundleStatus.TRANSMITTING
+        self.active_transmissions[bundle_id] = transmission
         
-        # Simulate transmission delay
-        if to_station == "ISS" or to_station == bundle.destination_station:
+        print(f"📡 Started transmitting bundle {bundle_id[:8]}")
+        print(f"   Route: {from_station} → {to_station}")
+        print(f"   Size: {bundle.size_bytes} bytes ({bundle.size_bytes/1024:.2f} KB)")
+        print(f"   Data Rate: {data_rate_bps/1000:.1f} kbps")
+        print(f"   Estimated Duration: {transmission_time_sec:.1f}s")
+        
+        return transmission
+    
+    def update_transmissions(self, delta_time_sec: float, 
+                           station_contact_states: Dict[str, bool]) -> List[str]:
+        """
+        Update all active transmissions
+        station_contact_states: dict of {station_id: is_visible}
+        Returns list of completed bundle IDs
+        """
+        completed = []
+        
+        for bundle_id, transmission in list(self.active_transmissions.items()):
+            # Check if contact is maintained
+            from_station = transmission.from_station
+            is_contact_maintained = station_contact_states.get(from_station, False)
+            
+            if not is_contact_maintained and transmission.to_station == "ISS":
+                # Contact lost! Abort transmission to ISS
+                elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
+                print(f"⚠️  Transmission of {bundle_id[:8]} ABORTED after {elapsed:.1f}s (contact lost)")
+                print(f"   Progress: {transmission.progress_percent():.1f}% ({transmission.bytes_transmitted:.0f}/{transmission.size_bytes} bytes)")
+                
+                bundle = self.bundles[bundle_id]
+                bundle.status = BundleStatus.QUEUED  # Back to queue
+                del self.active_transmissions[bundle_id]
+                continue
+            
+            # Update bytes transmitted
+            bytes_this_tick = (transmission.data_rate_bps / 8) * delta_time_sec
+            transmission.bytes_transmitted = min(
+                transmission.size_bytes,
+                transmission.bytes_transmitted + bytes_this_tick
+            )
+            
+            # Check if complete
+            if transmission.is_complete():
+                completed.append(bundle_id)
+                elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
+                print(f"✅ Transmission COMPLETE: {bundle_id[:8]}")
+                print(f"   Route: {transmission.from_station} → {transmission.to_station}")
+                print(f"   Size: {transmission.size_bytes} bytes")
+                print(f"   Actual Duration: {elapsed:.2f}s")
+                print(f"   Average Rate: {(transmission.size_bytes * 8 / elapsed / 1000):.1f} kbps")
+                
+                del self.active_transmissions[bundle_id]
+        
+        return completed
+    
+    def complete_transmission(self, bundle_id: str) -> Optional[Dict]:
+        """
+        Complete a bundle transmission and generate ACK
+        """
+        if bundle_id not in self.bundles:
+            return None
+        
+        bundle = self.bundles[bundle_id]
+        
+        # Get transmission destination from bundle.forwarded_to
+        to_station = bundle.forwarded_to
+        from_station = bundle.current_custodian
+        
+        if not to_station:
+            print(f"⚠️  Cannot complete transmission for {bundle_id[:8]} - no destination set")
+            return None
+        
+        # Move bundle
+        if to_station == "ISS":
             # Delivered!
             bundle.status = BundleStatus.DELIVERED
             bundle.delivered_at = datetime.now(timezone.utc)
             bundle.hops.append(to_station)
+            bundle.forwarded_to = None
+            
+            # Calculate total delivery time
+            total_time = (bundle.delivered_at - bundle.created_at).total_seconds()
             
             # Remove from queue
             if bundle_id in self.station_queues[from_station]:
                 self.station_queues[from_station].remove(bundle_id)
             
-            print(f"✅ Bundle {bundle_id[:8]} delivered to {to_station}")
+            print(f"🎯 Bundle {bundle_id[:8]} DELIVERED to ISS")
+            print(f"   Total delivery time: {total_time:.1f}s ({total_time/60:.1f} min)")
+            print(f"   Complete path: {' → '.join(bundle.hops)}")
             
-            # NEW: Generate ACK for delivery
             ack = {
                 "type": "custody_ack",
                 "bundle_id": bundle_id,
@@ -135,26 +273,23 @@ class DTNBundleManager:
                 "ack_type": "delivered",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
-            return (True, ack)
+            return ack
         else:
             # Forwarded to another station
-            bundle.status = BundleStatus.FORWARDED
+            bundle.status = BundleStatus.QUEUED
             previous_custodian = bundle.current_custodian
             bundle.current_custodian = to_station
-            bundle.forwarded_to = to_station
             bundle.hops.append(to_station)
+            bundle.forwarded_to = None  # Clear this
             
             # Move from source queue to destination queue
             if bundle_id in self.station_queues[from_station]:
                 self.station_queues[from_station].remove(bundle_id)
             self.station_queues[to_station].append(bundle_id)
             
-            # Reset status to queued at new station
-            bundle.status = BundleStatus.QUEUED
+            print(f"📨 Bundle {bundle_id[:8]} custody transferred to {to_station.upper()}")
+            print(f"   Path so far: {' → '.join(bundle.hops)}")
             
-            print(f"📨 Bundle {bundle_id[:8]} forwarded {from_station} → {to_station}")
-            
-            # NEW: Generate ACK for custody transfer
             ack = {
                 "type": "custody_ack",
                 "bundle_id": bundle_id,
@@ -164,19 +299,7 @@ class DTNBundleManager:
                 "ack_type": "custody_accepted",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
-            return (True, ack)
-    
-    def process_custody_ack(self, ack: Dict) -> None:
-        """
-        Process a custody acknowledgement
-        When a station receives an ACK, it can safely delete its copy of the bundle
-        """
-        bundle_id = ack["bundle_id"]
-        to_station = ack["to_station"]
-        
-        # The previous custodian no longer needs to keep the bundle
-        # (already removed from queue during transmit_bundle)
-        print(f"✓ Station {to_station} received ACK for bundle {ack['bundle_id_short']}")
+            return ack
     
     def get_pending_acks(self) -> List[Dict]:
         """Get and clear pending ACKs"""
@@ -216,41 +339,32 @@ class DTNBundleManager:
             for station_id in self.stations.keys()
         }
     
-    def process_contact(self, station_id: str, is_visible: bool, next_visible_station: Optional[str] = None):
+    def get_active_transmissions(self) -> List[Dict]:
+        """Get all active transmissions for frontend"""
+        return [
+            {
+                "bundle_id": t.bundle_id,
+                "bundle_id_short": t.bundle_id[:8],
+                "from_station": t.from_station,
+                "to_station": t.to_station,
+                "progress_percent": t.progress_percent(),
+                "bytes_transmitted": int(t.bytes_transmitted),
+                "size_bytes": t.size_bytes,
+                "data_rate_kbps": round(t.data_rate_bps / 1000, 1),
+                "time_remaining_sec": round(t.estimated_time_remaining(), 1)
+            }
+            for t in self.active_transmissions.values()
+        ]
+    
+    def process_contact(self, station_id: str, is_visible: bool, 
+                       next_visible_station: Optional[str] = None,
+                       data_rate_bps: float = 0):
         """
-        Process bundles during contact opportunities
-        - If ISS visible: transmit queued bundles
-        - If not visible but another station will be: forward bundles
+        Process bundles during contact opportunities - DEPRECATED
+        This method is kept for compatibility but transmission management
+        is now handled in main.py
         """
-        queue = self.station_queues.get(station_id, [])
-        
-        if not queue:
-            return
-        
-        if is_visible:
-            # ISS is overhead - transmit bundles
-            transmitted = []
-            for bundle_id in queue[:3]:  # Transmit up to 3 bundles per update
-                result = self.transmit_bundle(bundle_id, station_id, "ISS")
-                if result:
-                    success, ack = result
-                    if success:
-                        transmitted.append(bundle_id)
-                        if ack:
-                            self.queue_ack(ack)
-            
-            if transmitted:
-                print(f"📡 {station_id} transmitted {len(transmitted)} bundles to ISS")
-        
-        elif next_visible_station and len(queue) > 0:
-            # Forward bundle to next station that will have contact
-            # Forward highest priority bundle
-            bundle_id = queue[0]
-            result = self.transmit_bundle(bundle_id, station_id, next_visible_station)
-            if result:
-                success, ack = result
-                if success and ack:
-                    self.queue_ack(ack)
+        pass
     
     def cleanup_expired(self):
         """Remove expired bundles from all queues"""
