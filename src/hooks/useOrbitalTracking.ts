@@ -108,6 +108,7 @@ export interface OrbitalData {
   link_budget_history: LinkBudgetHistoryPoint[];
   dtn_queues: Record<string, DTNBundle[]>;
   custody_acks: CustodyAck[];
+  delivered_bundles: DTNBundle[];
   active_transmissions: ActiveTransmission[];
 }
 

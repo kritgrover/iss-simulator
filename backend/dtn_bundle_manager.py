@@ -96,7 +96,8 @@ class DTNBundleManager:
         self.bundles: Dict[str, DTNBundle] = {}
         self.station_queues: Dict[str, List[str]] = {sid: [] for sid in self.stations.keys()}
         self.pending_acks: List[Dict] = []
-        self.active_transmissions: Dict[str, BundleTransmission] = {}  # NEW
+        self.active_transmissions: Dict[str, BundleTransmission] = {}
+        self.delivered_bundles: List[str] = []
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
     
@@ -260,6 +261,10 @@ class DTNBundleManager:
             if bundle_id in self.station_queues[from_station]:
                 self.station_queues[from_station].remove(bundle_id)
             
+            self.delivered_bundles.append(bundle_id)
+            if len(self.delivered_bundles) > 10:
+                self.delivered_bundles.pop(0)
+            
             print(f"🎯 Bundle {bundle_id[:8]} DELIVERED to ISS")
             print(f"   Total delivery time: {total_time:.1f}s ({total_time/60:.1f} min)")
             print(f"   Complete path: {' → '.join(bundle.hops)}")
@@ -300,6 +305,14 @@ class DTNBundleManager:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             return ack
+    
+    def get_delivered_bundles(self) -> List[Dict]:
+        """Get recently delivered bundles for history"""
+        bundles = []
+        for bundle_id in reversed(self.delivered_bundles):  # Most recent first
+            if bundle_id in self.bundles:
+                bundles.append(self.bundles[bundle_id].to_dict())
+        return bundles
     
     def get_pending_acks(self) -> List[Dict]:
         """Get and clear pending ACKs"""

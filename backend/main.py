@@ -390,6 +390,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()
+
+            # Get delivered bundles for history
+            delivered_bundles = dtn_manager.get_delivered_bundles() 
             
             # Get active transmissions
             active_transmissions = dtn_manager.get_active_transmissions()
@@ -411,6 +414,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "link_status": link_status,
                 "link_budget_history": list(link_budget_history),
                 "dtn_queues": dtn_queues,
+                "delivered_bundles": delivered_bundles,
                 "custody_acks": pending_acks,
                 "active_transmissions": active_transmissions
             }

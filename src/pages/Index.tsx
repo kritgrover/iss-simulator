@@ -143,6 +143,7 @@ const Index = () => {
                 linkStatus={orbitalData?.link_status ?? null}
                 allQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 stations={orbitalData?.stations ?? []}
+                deliveredBundles={orbitalData?.delivered_bundles ?? []}
                 isConnected={orbitalData?.link_status?.connection_state === "ACQUIRED" || orbitalData?.link_status?.connection_state === "DEGRADED"}
               />
             </div>
