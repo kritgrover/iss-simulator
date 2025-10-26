@@ -127,8 +127,37 @@ class DTNBundleManager:
         self.bundles[bundle_id] = bundle
         self.station_queues[source_station].append(bundle_id)
         
-        print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}... (size: {bundle.size_bytes} bytes)")
+        # NEW: Sort the queue by priority after adding
+        self._sort_station_queue(source_station)
+        
+        print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}... (size: {bundle.size_bytes} bytes, priority: {priority_enum.value})")
         return bundle
+    
+    def _sort_station_queue(self, station_id: str):
+        """
+        Sort a station's queue by priority
+        EXPEDITED (0) > NORMAL (1) > BULK (2)
+        """
+        queue_ids = self.station_queues.get(station_id, [])
+        
+        if not queue_ids:
+            return
+        
+        # Get bundle objects
+        bundles_with_ids = [
+            (bundle_id, self.bundles.get(bundle_id))
+            for bundle_id in queue_ids
+            if bundle_id in self.bundles
+        ]
+        
+        # Sort by priority
+        priority_order = {"EXPEDITED": 0, "NORMAL": 1, "BULK": 2}
+        bundles_with_ids.sort(
+            key=lambda x: priority_order.get(x[1].priority.value, 99) if x[1] else 99
+        )
+        
+        # Update the queue with sorted IDs
+        self.station_queues[station_id] = [bundle_id for bundle_id, _ in bundles_with_ids]
     
     def start_transmission(self, bundle_id: str, from_station: str, 
                       to_station: str, data_rate_bps: float) -> Optional[BundleTransmission]:
@@ -291,6 +320,9 @@ class DTNBundleManager:
             if bundle_id in self.station_queues[from_station]:
                 self.station_queues[from_station].remove(bundle_id)
             self.station_queues[to_station].append(bundle_id)
+            
+            # NEW: Sort the destination queue after adding bundle
+            self._sort_station_queue(to_station)
             
             print(f"📨 Bundle {bundle_id[:8]} custody transferred to {to_station.upper()}")
             print(f"   Path so far: {' → '.join(bundle.hops)}")

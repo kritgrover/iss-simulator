@@ -32,7 +32,7 @@ const Index = () => {
           if (backendStation) {
             return {
               ...station,
-              isActive: orbitalData.active_station_id === station.id,
+              isActive: backendStation.is_visible,
               elevation: backendStation.look_angles?.elevation || 0,
               nextPassTime: backendStation.next_pass_minutes > 0 
                 ? `${Math.floor(backendStation.next_pass_minutes / 60)}:${(backendStation.next_pass_minutes % 60).toString().padStart(2, '0')}`

@@ -221,6 +221,14 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 if is_transmitting:
                     continue  # Already transmitting, don't start another
                 
+                # Queue is now pre-sorted by priority in dtn_bundle_manager
+                # So we can just take the first bundle - it's guaranteed to be highest priority
+                next_bundle_id = queue[0]
+                next_bundle = dtn_manager.bundles.get(next_bundle_id)
+                
+                if not next_bundle:
+                    continue  # Bundle doesn't exist (shouldn't happen)
+                
                 # Case 1: This station can see ISS - transmit directly
                 if is_visible:
                     # Calculate data rate for this specific station
@@ -238,9 +246,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     data_rate_bps = link_budget.get("data_rate_bps", 0)
                     
                     if data_rate_bps > 0:
-                        # Start transmission of next bundle in queue to ISS
-                        next_bundle_id = queue[0]
-                        print(f"🛰️  {station_id.upper()} has ISS contact - transmitting directly to ISS")
+                        # Start transmission of HIGHEST PRIORITY bundle to ISS
+                        print(f"🛰️  {station_id.upper()} has ISS contact - transmitting {next_bundle.priority.value} priority bundle to ISS")
                         dtn_manager.start_transmission(
                             next_bundle_id,
                             station_id,
@@ -255,18 +262,16 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     # First check: Is there a station that can see ISS RIGHT NOW?
                     if current_active_station and current_active_station != station_id:
                         # There's an active station
-                        first_bundle_id = queue[0]
-                        bundle = dtn_manager.bundles.get(first_bundle_id)
-                        visited_stations = bundle.hops if bundle else []
+                        visited_stations = next_bundle.hops
                         
                         # Only forward if we haven't already visited the active station
                         if current_active_station not in visited_stations:
-                            print(f"📨 {station_id.upper()} forwarding to ACTIVE station {current_active_station.upper()} for immediate ISS contact")
+                            print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to ACTIVE station {current_active_station.upper()} for immediate ISS contact")
                             
                             # Use ground link (fast, 100 Mbps)
                             ground_link_bps = 100_000_000
                             dtn_manager.start_transmission(
-                                first_bundle_id,
+                                next_bundle_id,
                                 station_id,
                                 current_active_station,
                                 ground_link_bps
@@ -278,9 +283,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     
                     if current_station_next_pass > 0:
                         # Get bundle hops to avoid loops
-                        first_bundle_id = queue[0]
-                        bundle = dtn_manager.bundles.get(first_bundle_id)
-                        visited_stations = bundle.hops if bundle else []
+                        visited_stations = next_bundle.hops
                         
                         # Find stations with SOONER passes than current station
                         better_stations = [
@@ -296,12 +299,12 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             better_stations.sort(key=lambda s: s["next_pass_minutes"])
                             next_hop_station = better_stations[0]["id"]
                             
-                            print(f"📨 {station_id.upper()} forwarding to {next_hop_station.upper()} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
+                            print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_station.upper()} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
                             
                             # Use ground link (fast, 100 Mbps)
                             ground_link_bps = 100_000_000
                             dtn_manager.start_transmission(
-                                first_bundle_id,
+                                next_bundle_id,
                                 station_id,
                                 next_hop_station,
                                 ground_link_bps

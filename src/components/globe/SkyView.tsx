@@ -31,11 +31,6 @@ const SkyView = ({
       name: "ISS Live Streaming",
       url: "https://www.youtube.com/embed/Ra2CBPw1TOY?autoplay=1&mute=0",
       description: "24/7 ISS live feed"
-    },
-    {
-      name: "LIVE Video from the International Space Station",
-      url: "https://www.youtube.com/embed/hl0CtTZzUGg?si=IlY8gRc6VtUhr8Cl",
-      description: "24/7 ISS live feed"
     }
   ];
 

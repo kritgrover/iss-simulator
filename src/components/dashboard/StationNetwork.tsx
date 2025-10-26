@@ -13,7 +13,7 @@ interface StationNetworkProps {
   visibleStationsCount?: number;
   handoffInProgress?: boolean;
   activeStationId?: string;
-  selectedStationId?: string; // NEW
+  selectedStationId?: string;
 }
 
 const StationNetwork = ({ 
@@ -24,7 +24,7 @@ const StationNetwork = ({
   visibleStationsCount = 0,
   handoffInProgress = false,
   activeStationId = '',
-  selectedStationId = '' // NEW
+  selectedStationId = ''
 }: StationNetworkProps) => {
   const [expandedStation, setExpandedStation] = useState<string | null>(null);
   const [highlightStation, setHighlightStation] = useState<string | null>(null);
@@ -112,7 +112,10 @@ const StationNetwork = ({
           const stationQueue = dtnQueues[station.id] || [];
           const nextHandoff = getNextHandoffStation(station);
           const isHighlighted = highlightStation === station.id;
-          const isSelected = selectedStationId === station.id; // NEW
+          const isSelected = selectedStationId === station.id;
+          
+          // NEW: Check if this station is currently tracking (not just highest elevation)
+          const isTracking = station.isActive; // This is set from backend's is_visible
 
           return (
             <div
@@ -120,14 +123,14 @@ const StationNetwork = ({
               className={`rounded border transition-all ${
                 isHighlighted
                   ? 'border-amber-500 bg-amber-500/20 shadow-lg animate-pulse'
-                  : isSelected // NEW: Highlight selected station
+                  : isSelected
                   ? 'border-primary bg-primary/10'
-                  : station.isActive
+                  : isTracking // CHANGED: Use isTracking instead of just activeStationId match
                   ? 'border-primary/50 bg-primary/5'
                   : 'border-border hover:border-border/60 hover:bg-muted/50'
               }`}
             >
-              {/* Handoff Indicator Banner */}
+              {/* Handoff Indicator Banner - only for THE active station */}
               {isHighlighted && (
                 <div className="flex items-center gap-2 bg-amber-500/30 px-2 py-1 border-b border-amber-500/50">
                   <Zap className="w-3 h-3 text-amber-500 animate-pulse" />
@@ -137,11 +140,21 @@ const StationNetwork = ({
                 </div>
               )}
 
-              {/* NEW: Selected Station Indicator */}
+              {/* Selected Station Indicator */}
               {isSelected && (
                 <div className="flex items-center gap-2 bg-primary/30 px-2 py-1 border-b border-primary/50">
                   <span className="text-[10px] font-mono font-semibold text-primary uppercase">
                     ✓ Controlling This Station
+                  </span>
+                </div>
+              )}
+
+              {/* NEW: Tracking Indicator for all visible stations */}
+              {isTracking && !isHighlighted && !isSelected && (
+                <div className="flex items-center gap-2 bg-success/20 px-2 py-1 border-b border-success/50">
+                  <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                  <span className="text-[10px] font-mono font-semibold text-success uppercase">
+                    🔗 Tracking ISS
                   </span>
                 </div>
               )}
@@ -154,11 +167,11 @@ const StationNetwork = ({
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <div
                     className={`w-2 h-2 rounded-full ${
-                      station.isActive ? 'animate-pulse' : ''
+                      isTracking ? 'animate-pulse' : ''
                     }`}
                     style={{
-                      backgroundColor: station.isActive ? station.color : '#6b7280',
-                      boxShadow: station.isActive ? `0 0 8px ${station.color}` : 'none'
+                      backgroundColor: isTracking ? station.color : '#6b7280',
+                      boxShadow: isTracking ? `0 0 8px ${station.color}` : 'none'
                     }}
                   />
                   <div className="flex-1 min-w-0">
@@ -184,9 +197,9 @@ const StationNetwork = ({
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <div className="text-[10px] text-secondary">
-                      {station.isActive ? 'ACTIVE' : 'IDLE'}
+                      {isTracking ? 'TRACKING' : 'IDLE'}
                     </div>
-                    {station.isActive ? (
+                    {isTracking ? (
                       <div className="text-xs font-mono">
                         Elev: {station.elevation.toFixed(1)}°
                       </div>
@@ -256,7 +269,7 @@ const StationNetwork = ({
                       )}
                     </div>
                     
-                    {!station.isActive && queueStats.queued > 0 && nextHandoff && (
+                    {!isTracking && queueStats.queued > 0 && nextHandoff && (
                       <div className="flex items-center gap-1 text-[9px] font-mono text-secondary">
                         <span>Next hop:</span>
                         <ArrowRight className="w-2.5 h-2.5" />
