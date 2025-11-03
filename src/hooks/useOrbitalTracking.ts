@@ -106,6 +106,14 @@ export interface OrbitalData {
   orbital_parameters: OrbitalParameters | null;
   link_status: LinkStatus | null;
   link_budget_history: LinkBudgetHistoryPoint[];
+  visible_links: Array<{
+    station_id: string;
+    station_name: string;
+    signal_strength_dbm: number;
+    connection_state: string;
+    snr_db: number;
+    data_rate_kbps: number;
+  }>;
   dtn_queues: Record<string, DTNBundle[]>;
   custody_acks: CustodyAck[];
   delivered_bundles: DTNBundle[];

@@ -103,12 +103,6 @@ const Index = () => {
             <div className="h-full border-r border-border p-4 space-y-4 overflow-y-auto">
               <LinkStatus linkStatus={orbitalData?.link_status ?? null} />
 
-              {orbitalData?.active_transmissions && orbitalData.active_transmissions.length > 0 && (
-                <TransmissionMonitor 
-                  activeTransmissions={orbitalData.active_transmissions}
-                />
-              )}
-
               <MessageExchange 
                 activeStationId={selectedStationId}
                 stationColor={selectedStation?.color || '#4ade80'}
@@ -117,6 +111,11 @@ const Index = () => {
                 dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 custodyAcks={orbitalData?.custody_acks ?? []}
               />
+              {orbitalData?.active_transmissions && orbitalData.active_transmissions.length > 0 && (
+                <TransmissionMonitor 
+                  activeTransmissions={orbitalData.active_transmissions}
+                />
+              )}
               <StationNetwork 
                 stations={stations}
                 onStationSelect={handleStationSelect}
@@ -141,6 +140,7 @@ const Index = () => {
               />
               <TrafficFlowMonitor 
                 linkStatus={orbitalData?.link_status ?? null}
+                visibleLinks={orbitalData?.visible_links ?? []}
                 allQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 stations={orbitalData?.stations ?? []}
                 deliveredBundles={orbitalData?.delivered_bundles ?? []}

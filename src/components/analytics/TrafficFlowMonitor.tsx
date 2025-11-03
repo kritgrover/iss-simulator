@@ -18,6 +18,14 @@ interface TrafficFlowMonitorProps {
     data_rate_bps?: number;
     data_rate_kbps?: number;
   } | null;
+  visibleLinks?: Array<{
+    station_id: string;
+    station_name: string;
+    signal_strength_dbm: number;
+    connection_state: string;
+    snr_db: number;
+    data_rate_kbps: number;
+  }>;
   allQueues?: Record<string, DTNBundle[]>;
   deliveredBundles?: DTNBundle[];
   stations?: Station[];
@@ -40,6 +48,7 @@ const TrafficFlowMonitor = ({
   linkStatus,
   allQueues = {},
   deliveredBundles = [],
+  visibleLinks = [],
   stations = [],
   isConnected = false 
 }: TrafficFlowMonitorProps) => {
@@ -121,6 +130,28 @@ const TrafficFlowMonitor = ({
       maxDepth: allBundles.length
     });
   }, [allQueues]);
+
+  useEffect(() => {
+    if (!visibleLinks || visibleLinks.length === 0) {
+      setUplinkBandwidth(0);
+      setDownlinkBandwidth(0);
+      return;
+    }
+
+    // Sum up data rates from all visible stations
+    const totalDataRateKbps = visibleLinks.reduce((sum, link) => {
+      return sum + (link.data_rate_kbps || 0);
+    }, 0);
+    
+    const variation = (Math.random() - 0.5) * 0.5;
+    
+    const uplinkRate = totalDataRateKbps + variation;
+    const downlinkRate = totalDataRateKbps * 1.2 + variation;
+    
+    setUplinkBandwidth(Math.max(0, uplinkRate));
+    setDownlinkBandwidth(Math.max(0, downlinkRate));
+
+  }, [visibleLinks]);
 
   // Track last 5 delivered bundles
   useEffect(() => {
@@ -209,6 +240,22 @@ const TrafficFlowMonitor = ({
             />
           </div>
         </div>
+
+        {visibleLinks && visibleLinks.length > 1 && (
+          <div className="pt-2 border-t border-border/30">
+            <div className="text-[9px] text-secondary/80 mb-1">
+              Active Links ({visibleLinks.length} stations):
+            </div>
+            <div className="space-y-1">
+              {visibleLinks.map(link => (
+                <div key={link.station_id} className="flex justify-between items-center text-[9px]">
+                  <span className="text-secondary uppercase font-mono">{link.station_name}</span>
+                  <span className="text-cyan-400 font-mono">{link.data_rate_kbps.toFixed(1)} kbps</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. Bundle Queue Visualization - NETWORK-WIDE */}

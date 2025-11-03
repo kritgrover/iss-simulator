@@ -257,11 +257,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 
                 # Case 2: This station can't see ISS
                 else:
-                    # Check if we should forward to currently active station OR wait for a better pass
-                    
                     # First check: Is there a station that can see ISS RIGHT NOW?
                     if current_active_station and current_active_station != station_id:
-                        # There's an active station
                         visited_stations = next_bundle.hops
                         
                         # Only forward if we haven't already visited the active station
@@ -282,7 +279,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     current_station_next_pass = station_data["next_pass_minutes"]
                     
                     if current_station_next_pass > 0:
-                        # Get bundle hops to avoid loops
                         visited_stations = next_bundle.hops
                         
                         # Find stations with SOONER passes than current station
@@ -391,6 +387,30 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     "data_rate_kbps": 0.0,
                 }
             
+            # NEW: Calculate link budgets for ALL VISIBLE stations
+            visible_links = []
+            for station_data in stations_data:
+                if station_data["is_visible"]:
+                    radial_velocity_data = tracker.calculate_radial_velocity(
+                        station_data["lat"],
+                        station_data["lon"]
+                    )
+                    
+                    link_budget = link_budget_calc.calculate_link_budget(
+                        station_data["look_angles"]["range_km"],
+                        station_data["look_angles"]["elevation"],
+                        radial_velocity_data["radial_velocity_kmps"]
+                    )
+                    
+                    visible_links.append({
+                        "station_id": station_data["id"],
+                        "station_name": station_data["name"],
+                        "signal_strength_dbm": link_budget["signal_strength_dbm"],
+                        "connection_state": link_budget["connection_state"],
+                        "snr_db": link_budget["snr_db"],
+                        "data_rate_kbps": link_budget.get("data_rate_kbps", 0),
+                    })
+            
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()
 
@@ -414,6 +434,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "visible_stations_count": len(visible_stations),
                 "min_elevation": MIN_ELEVATION_FOR_VISIBILITY,
                 "orbital_parameters": orbital_parameters,
+                "visible_links": visible_links,
                 "link_status": link_status,
                 "link_budget_history": list(link_budget_history),
                 "dtn_queues": dtn_queues,
@@ -422,10 +443,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "active_transmissions": active_transmissions
             }
             
-            # Send data
             await websocket.send_json(data)
-            
-            # Update every 1 second
             await asyncio.sleep(1)
             
     except WebSocketDisconnect:
