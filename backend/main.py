@@ -10,6 +10,9 @@ from tle_fetcher import TLEFetcher
 from orbital_tracker import OrbitalTracker
 from link_budget_calculator import LinkBudgetCalculator
 from dtn_bundle_manager import DTNBundleManager, BundlePriority
+from models import Base
+from db import engine, SessionLocal
+import os
 
 app = FastAPI()
 
@@ -41,8 +44,20 @@ GROUND_STATIONS = [
 
 MIN_ELEVATION_FOR_VISIBILITY = -5.0
 
-# Initialize DTN Bundle Manager
-dtn_manager = DTNBundleManager(GROUND_STATIONS)
+# Initialize DTN Bundle Manager with DB session factory
+dtn_manager = DTNBundleManager(GROUND_STATIONS, session_factory=SessionLocal)
+
+
+@app.on_event("startup")
+def init_db_and_state():
+    # Ensure SQLite directory exists when using default DATABASE_URL
+    try:
+        os.makedirs("backend/data", exist_ok=True)
+    except Exception:
+        pass
+    Base.metadata.create_all(bind=engine)
+    # Load persisted state into memory
+    dtn_manager.load_from_db()
 
 # Pydantic models for API
 class BundleCreateRequest(BaseModel):

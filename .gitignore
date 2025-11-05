@@ -23,3 +23,20 @@ dist-ssr
 *.sln
 *.sw?
 
+# Python / virtualenv
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.env*
+
+# SQLite database artifacts
+backend/data/
+*.db
+*.db-journal
+
+# Runtime cache
+iss_tle_cache.txt
+

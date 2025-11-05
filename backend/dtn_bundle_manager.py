@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+import json
 
 class BundlePriority(str, Enum):
     EXPEDITED = "EXPEDITED"  # Red - high priority
@@ -91,13 +92,14 @@ class BundleTransmission:
 class DTNBundleManager:
     """Manages DTN bundles across ground station network"""
     
-    def __init__(self, stations: List[Dict]):
+    def __init__(self, stations: List[Dict], session_factory=None):
         self.stations = {s["id"]: s["name"] for s in stations}
         self.bundles: Dict[str, DTNBundle] = {}
         self.station_queues: Dict[str, List[str]] = {sid: [] for sid in self.stations.keys()}
         self.pending_acks: List[Dict] = []
         self.active_transmissions: Dict[str, BundleTransmission] = {}
         self.delivered_bundles: List[str] = []
+        self.session_factory = session_factory
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
     
@@ -129,6 +131,30 @@ class DTNBundleManager:
         
         # NEW: Sort the queue by priority after adding
         self._sort_station_queue(source_station)
+
+        # Persist to DB
+        if self.session_factory:
+            try:
+                from models import Bundle as BundleRow
+                with self.session_factory() as db:
+                    db.add(BundleRow(
+                        bundle_id=bundle_id,
+                        source_station=source_station,
+                        destination_station=destination,
+                        payload=payload,
+                        priority=priority_enum.value,
+                        status=bundle.status.value,
+                        created_at=bundle.created_at,
+                        ttl_hours=ttl_hours,
+                        current_custodian=source_station,
+                        forwarded_to=None,
+                        delivered_at=None,
+                        hops_json=json.dumps(bundle.hops),
+                        size_bytes=bundle.size_bytes,
+                    ))
+                    db.commit()
+            except Exception as e:
+                print(f"⚠️  Failed to persist bundle {bundle_id[:8]}: {e}")
         
         print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}... (size: {bundle.size_bytes} bytes, priority: {priority_enum.value})")
         return bundle
@@ -203,6 +229,31 @@ class DTNBundleManager:
         # Mark bundle as transmitting
         bundle.status = BundleStatus.TRANSMITTING
         self.active_transmissions[bundle_id] = transmission
+
+        # Persist transmission start and bundle status
+        if self.session_factory:
+            try:
+                from models import Bundle as BundleRow, Transmission as TxRow
+                with self.session_factory() as db:
+                    # Upsert bundle status/forward target
+                    row = db.query(BundleRow).filter(BundleRow.bundle_id == bundle_id).one_or_none()
+                    if row:
+                        row.status = bundle.status.value
+                        row.forwarded_to = to_station
+                    db.add(TxRow(
+                        bundle_id=bundle_id,
+                        from_station=from_station,
+                        to_station=to_station,
+                        started_at=now,
+                        size_bytes=bundle.size_bytes,
+                        data_rate_bps=data_rate_bps,
+                        bytes_transmitted=0.0,
+                        expected_completion=expected_completion,
+                        completed=False,
+                    ))
+                    db.commit()
+            except Exception as e:
+                print(f"⚠️  Failed to persist transmission start for {bundle_id[:8]}: {e}")
         
         print(f"📡 Started transmitting bundle {bundle_id[:8]}")
         print(f"   Route: {from_station} → {to_station}")
@@ -307,6 +358,39 @@ class DTNBundleManager:
                 "ack_type": "delivered",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
+            # Persist delivery and ACK
+            if self.session_factory:
+                try:
+                    from models import Bundle as BundleRow, Transmission as TxRow, AckEvent
+                    with self.session_factory() as db:
+                        row = db.query(BundleRow).filter(BundleRow.bundle_id == bundle_id).one_or_none()
+                        if row:
+                            row.status = bundle.status.value
+                            row.current_custodian = bundle.current_custodian
+                            row.forwarded_to = bundle.forwarded_to
+                            row.delivered_at = bundle.delivered_at
+                            row.hops_json = json.dumps(bundle.hops)
+                        # mark latest transmission for this bundle as completed
+                        latest_tx = (
+                            db.query(TxRow)
+                            .filter(TxRow.bundle_id == bundle_id)
+                            .order_by(TxRow.started_at.desc())
+                            .first()
+                        )
+                        if latest_tx:
+                            latest_tx.completed = True
+                            latest_tx.bytes_transmitted = bundle.size_bytes
+                        db.add(AckEvent(
+                            bundle_id=bundle_id,
+                            ack_type=ack["ack_type"],
+                            from_station=ack["from_station"],
+                            to_station=ack["to_station"],
+                            timestamp=datetime.now(timezone.utc),
+                            dispatched=False,
+                        ))
+                        db.commit()
+                except Exception as e:
+                    print(f"⚠️  Failed to persist delivery for {bundle_id[:8]}: {e}")
             return ack
         else:
             # Forwarded to another station
@@ -336,6 +420,28 @@ class DTNBundleManager:
                 "ack_type": "custody_accepted",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
+            # Persist forward custody and ACK
+            if self.session_factory:
+                try:
+                    from models import Bundle as BundleRow, AckEvent
+                    with self.session_factory() as db:
+                        row = db.query(BundleRow).filter(BundleRow.bundle_id == bundle_id).one_or_none()
+                        if row:
+                            row.status = bundle.status.value
+                            row.current_custodian = bundle.current_custodian
+                            row.forwarded_to = bundle.forwarded_to
+                            row.hops_json = json.dumps(bundle.hops)
+                        db.add(AckEvent(
+                            bundle_id=bundle_id,
+                            ack_type=ack["ack_type"],
+                            from_station=ack["from_station"],
+                            to_station=ack["to_station"],
+                            timestamp=datetime.now(timezone.utc),
+                            dispatched=False,
+                        ))
+                        db.commit()
+                except Exception as e:
+                    print(f"⚠️  Failed to persist custody transfer for {bundle_id[:8]}: {e}")
             return ack
     
     def get_delivered_bundles(self) -> List[Dict]:
@@ -420,4 +526,62 @@ class DTNBundleManager:
                 for queue in self.station_queues.values():
                     if bundle_id in queue:
                         queue.remove(bundle_id)
+                # Persist expiration
+                if self.session_factory:
+                    try:
+                        from models import Bundle as BundleRow
+                        with self.session_factory() as db:
+                            row = db.query(BundleRow).filter(BundleRow.bundle_id == bundle_id).one_or_none()
+                            if row:
+                                row.status = bundle.status.value
+                                row.forwarded_to = None
+                            db.commit()
+                    except Exception as e:
+                        print(f"⚠️  Failed to persist expiration for {bundle_id[:8]}: {e}")
                 print(f"⏰ Bundle {bundle_id[:8]} expired (TTL exceeded)")
+
+    def load_from_db(self):
+        """Load persisted bundles into memory and rebuild queues/delivered list"""
+        if not self.session_factory:
+            return
+        try:
+            from models import Bundle as BundleRow
+            with self.session_factory() as db:
+                rows = db.query(BundleRow).all()
+                self.bundles.clear()
+                self.station_queues = {sid: [] for sid in self.stations.keys()}
+                self.delivered_bundles = []
+                for row in rows:
+                    try:
+                        hops = json.loads(row.hops_json or "[]")
+                    except Exception:
+                        hops = []
+                    b = DTNBundle(
+                        bundle_id=row.bundle_id,
+                        source_station=row.source_station,
+                        destination_station=row.destination_station,
+                        payload=row.payload,
+                        priority=BundlePriority(row.priority),
+                        created_at=row.created_at,
+                        ttl_hours=row.ttl_hours,
+                        status=BundleStatus(row.status),
+                        current_custodian=row.current_custodian,
+                        forwarded_to=row.forwarded_to,
+                        delivered_at=row.delivered_at,
+                        hops=hops,
+                        size_bytes=row.size_bytes,
+                    )
+                    self.bundles[b.bundle_id] = b
+                    if b.status == BundleStatus.QUEUED:
+                        self.station_queues[b.current_custodian].append(b.bundle_id)
+                    if b.status == BundleStatus.DELIVERED:
+                        self.delivered_bundles.append(b.bundle_id)
+                # Keep last 10 delivered ids
+                if len(self.delivered_bundles) > 10:
+                    self.delivered_bundles = self.delivered_bundles[-10:]
+                # Sort all station queues by priority
+                for sid in self.station_queues.keys():
+                    self._sort_station_queue(sid)
+                print(f"💾 Loaded {len(self.bundles)} bundles from persistence")
+        except Exception as e:
+            print(f"⚠️  Failed to load bundles from DB: {e}")
