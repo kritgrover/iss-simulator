@@ -4,12 +4,28 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import asyncio
 import json
+import os
 from datetime import datetime, timezone
 from collections import deque
 from tle_fetcher import TLEFetcher
 from orbital_tracker import OrbitalTracker
 from link_budget_calculator import LinkBudgetCalculator
 from dtn_bundle_manager import DTNBundleManager, BundlePriority, BundleStatus
+
+# Mininet imports (optional - fallback if not available)
+USE_MININET = os.environ.get('USE_MININET', 'false').lower() == 'true'
+if USE_MININET:
+    try:
+        from mininet_topology import ISSTopology, create_topology
+        from link_parameter_manager import LinkParameterManager
+        from network_dtn_manager import NetworkDTNManager
+        MININET_AVAILABLE = True
+    except ImportError as e:
+        print("⚠️  Mininet not available: {}. Using simulation mode.".format(e))
+        MININET_AVAILABLE = False
+        USE_MININET = False
+else:
+    MININET_AVAILABLE = False
 
 app = FastAPI()
 
@@ -41,8 +57,28 @@ GROUND_STATIONS = [
 
 MIN_ELEVATION_FOR_VISIBILITY = -5.0
 
-# Initialize DTN Bundle Manager
-dtn_manager = DTNBundleManager(GROUND_STATIONS)
+# Initialize Mininet topology and network DTN manager (if enabled)
+topology = None
+link_param_manager = None
+if USE_MININET and MININET_AVAILABLE:
+    try:
+        print("🌐 Initializing Mininet topology...")
+        topology = create_topology(GROUND_STATIONS)
+        topology.start()
+        link_param_manager = LinkParameterManager()
+        dtn_manager = NetworkDTNManager(GROUND_STATIONS, topology)
+        dtn_manager.start_servers()
+        print("✅ Mininet network simulation enabled")
+    except Exception as e:
+        print("❌ Failed to initialize Mininet: {}. Falling back to simulation mode.".format(e))
+        topology = None
+        link_param_manager = None
+        dtn_manager = DTNBundleManager(GROUND_STATIONS)
+        USE_MININET = False
+else:
+    # Initialize standard DTN Bundle Manager (simulation mode)
+    dtn_manager = DTNBundleManager(GROUND_STATIONS)
+    print("📊 Using simulation mode (Mininet disabled)")
 
 # Pydantic models for API
 class BundleCreateRequest(BaseModel):
@@ -308,8 +344,10 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     )
                     
                     data_rate_bps = link_budget.get("data_rate_bps", 0)
+                    connection_state = link_budget.get("connection_state", "IDLE")
                     
-                    if data_rate_bps > 0:
+                    # Only transmit if link is up and data rate is available
+                    if data_rate_bps > 0 and connection_state != "IDLE":
                         # Check if this is a retransmission
                         # Check if this is a retransmission (from timeout or NAK)
                         retry_count = None  # None means use stored value or 0
@@ -340,7 +378,30 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 # Case 2: This station can't see ISS
                 else:
                     # First check: Is there a station that can see ISS RIGHT NOW?
-                    if current_active_station and current_active_station != station_id:
+                    # Verify the active station actually has a valid link
+                    active_station_has_link = False
+                    if current_active_station:
+                        active_station_data = next(
+                            (s for s in stations_data if s["id"] == current_active_station),
+                            None
+                        )
+                        if active_station_data and active_station_data["is_visible"]:
+                            # Check if active station has valid link budget
+                            radial_velocity_data = tracker.calculate_radial_velocity(
+                                active_station_data["lat"],
+                                active_station_data["lon"]
+                            )
+                            link_budget = link_budget_calc.calculate_link_budget(
+                                active_station_data["look_angles"]["range_km"],
+                                active_station_data["look_angles"]["elevation"],
+                                radial_velocity_data["radial_velocity_kmps"]
+                            )
+                            active_station_has_link = (
+                                link_budget.get("connection_state", "IDLE") != "IDLE" and
+                                link_budget.get("data_rate_bps", 0) > 0
+                            )
+                    
+                    if current_active_station and current_active_station != station_id and active_station_has_link:
                         visited_stations = next_bundle.hops
                         
                         # Only forward if we haven't already visited the active station
@@ -510,6 +571,24 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         "snr_db": link_budget["snr_db"],
                         "data_rate_kbps": link_budget.get("data_rate_kbps", 0),
                     })
+                    
+                    # Update Mininet link parameters if enabled
+                    if USE_MININET and topology and link_param_manager:
+                        mininet_params = link_param_manager.link_budget_to_mininet_params(link_budget)
+                        topology.update_iss_link(
+                            station_data["id"],
+                            mininet_params["bandwidth_mbps"],
+                            mininet_params["delay_ms"],
+                            mininet_params["loss_percent"]
+                        )
+                elif USE_MININET and topology and link_param_manager:
+                    # Station not visible - set link to minimal parameters
+                    topology.update_iss_link(
+                        station_data["id"],
+                        0.001,  # Minimal bandwidth
+                        100.0,  # High delay
+                        50.0    # High loss
+                    )
             
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()
@@ -584,6 +663,22 @@ async def create_bundle(request: BundleCreateRequest):
         traceback.print_exc()
         return {"success": False, "error": str(e)}
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    if USE_MININET and topology:
+        print("🛑 Shutting down Mininet topology...")
+        if hasattr(dtn_manager, 'stop_servers'):
+            dtn_manager.stop_servers()
+        topology.stop()
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except KeyboardInterrupt:
+        print("\n🛑 Shutting down...")
+        if USE_MININET and topology:
+            if hasattr(dtn_manager, 'stop_servers'):
+                dtn_manager.stop_servers()
+            topology.stop()
