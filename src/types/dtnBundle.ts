@@ -5,7 +5,7 @@ export interface DTNBundle {
   destination_station: string;
   payload: string;
   priority: "EXPEDITED" | "NORMAL" | "BULK";
-  status: "QUEUED" | "TRANSMITTING" | "DELIVERED" | "FORWARDED" | "EXPIRED";
+  status: "QUEUED" | "TRANSMITTING" | "WAITING_ACK" | "DELIVERED" | "FORWARDED" | "EXPIRED";
   created_at: string;
   ttl_hours: number;
   current_custodian: string;
@@ -14,4 +14,5 @@ export interface DTNBundle {
   hops: string[];
   delivered_at?: string | null;
   size_bytes: number;
+  checksum: number;
 }
