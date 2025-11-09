@@ -118,17 +118,17 @@ class ISSTopology:
         info("🛰️  Created ISS node: {}\n".format(self.iss_node.name))
         
         # Create ground station nodes
-        for station in self.ground_stations:
+        for ip_index, station in enumerate(self.ground_stations, start=1):
             station_id = station["id"]
             # Use station ID as hostname, IP based on index
-            ip_index = list(self.ground_stations).index(station) + 1
+            ip_address = '10.0.0.{}/24'.format(ip_index)
             host = self.net.addHost(
                 station_id,
-                ip='10.0.0.{}/24'.format(ip_index)
+                ip=ip_address
             )
             self.station_nodes[station_id] = host
             info("📡 Created ground station node: {} ({})\n".format(
-                station_id, host.IP()
+                station_id, ip_address
             ))
         
         # Connect ground stations to switch
@@ -152,6 +152,21 @@ class ISSTopology:
         
         info("🚀 Starting Mininet network...\n")
         self.net.start()
+        
+        # Give network a moment to fully initialize interfaces
+        import time
+        time.sleep(0.5)
+        
+        # Verify all nodes have interfaces
+        for station_id, node in self.station_nodes.items():
+            try:
+                if not node.intfs:
+                    error("⚠️  Warning: {} has no interfaces after network start\n".format(station_id))
+                else:
+                    info("✅ {} has {} interface(s)\n".format(station_id, len(node.intfs)))
+            except Exception as e:
+                error("⚠️  Error checking interfaces for {}: {}\n".format(station_id, e))
+        
         info("✅ Network started\n")
     
     def stop(self):
@@ -272,20 +287,38 @@ class ISSTopology:
         """Get IP address of a node"""
         node = self.get_node(node_id)
         if node:
-            return node.IP()
+            try:
+                ip = node.IP()
+                if ip:
+                    return ip
+            except (AttributeError, RuntimeError) as e:
+                error("❌ Error getting IP for {}: {}\n".format(node_id, e))
+            return None
         return None
     
     def get_all_station_ips(self) -> Dict[str, str]:
         """Get all ground station IP addresses"""
-        return {
-            station_id: node.IP()
-            for station_id, node in self.station_nodes.items()
-        }
+        result = {}
+        for station_id, node in self.station_nodes.items():
+            try:
+                ip = node.IP()
+                if ip:
+                    result[station_id] = ip
+            except (AttributeError, RuntimeError):
+                # IP not available yet or node not started
+                pass
+        return result
     
     def get_iss_ip(self) -> Optional[str]:
         """Get ISS node IP address"""
         if self.iss_node:
-            return self.iss_node.IP()
+            try:
+                ip = self.iss_node.IP()
+                if ip:
+                    return ip
+            except (AttributeError, RuntimeError) as e:
+                error("❌ Error getting ISS IP: {}\n".format(e))
+            return None
         return None
     
     def ping_test(self, source: str, target: str) -> bool:
