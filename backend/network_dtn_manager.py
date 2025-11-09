@@ -51,20 +51,29 @@ class NetworkDTNManager(DTNBundleManager):
         print("🌐 NetworkDTNManager initialized")
     
     def start_servers(self):
-        """Start TCP servers for all nodes"""
+        """Start TCP servers for all nodes within their Mininet namespaces"""
         if self.running:
+            return
+        
+        if not self.topology:
+            print("⚠️  No topology available, cannot start servers in node namespaces")
             return
         
         self.running = True
         
-        # Start server for each ground station
+        # Get the path to dtn_server.py
+        import os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        dtn_server_script = os.path.join(script_dir, 'mininet_nodes', 'dtn_server.py')
+        
+        # Start server for each ground station within its node namespace
         for station_id in self.stations.keys():
-            self._start_server(station_id)
+            self._start_server_in_node(station_id, dtn_server_script)
         
-        # Start server for ISS
-        self._start_server('iss')
+        # Start server for ISS within its node namespace
+        self._start_server_in_node('iss', dtn_server_script)
         
-        print("✅ All DTN servers started")
+        print("✅ All DTN servers started in node namespaces")
     
     def stop_servers(self):
         """Stop all TCP servers"""
@@ -78,62 +87,55 @@ class NetworkDTNManager(DTNBundleManager):
                 pass
         self.connections.clear()
         
-        # Stop all servers
-        for node_id, server_socket in self.servers.items():
+        # Stop all server processes
+        for node_id, proc in self.servers.items():
             try:
-                server_socket.close()
+                if hasattr(proc, 'terminate'):
+                    proc.terminate()
+                elif hasattr(proc, 'kill'):
+                    proc.kill()
+                elif hasattr(proc, 'close'):
+                    proc.close()
             except:
                 pass
         
-        # Wait for threads to finish
-        for thread in self.server_threads.values():
-            thread.join(timeout=1.0)
+        # Wait for processes to finish
+        for node_id, proc in self.servers.items():
+            try:
+                if hasattr(proc, 'wait'):
+                    proc.wait(timeout=1.0)
+            except:
+                pass
         
         self.servers.clear()
         self.server_threads.clear()
         
         print("🛑 All DTN servers stopped")
     
-    def _start_server(self, node_id: str):
-        """Start TCP server for a node"""
+    def _start_server_in_node(self, node_id: str, server_script: str):
+        """Start TCP server within a Mininet node's namespace"""
         if node_id in self.servers:
             return
         
-        def server_thread():
-            try:
-                # Create socket
-                server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                server_socket.bind(('0.0.0.0', self.DTN_PORT))
-                server_socket.listen(5)
-                server_socket.settimeout(1.0)  # Allow checking self.running
-                
-                self.servers[node_id] = server_socket
-                
-                print("📡 Server started for {} on port {}".format(node_id, self.DTN_PORT))
-                
-                while self.running:
-                    try:
-                        client_socket, addr = server_socket.accept()
-                        # Handle connection in separate thread
-                        thread = threading.Thread(
-                            target=self._handle_connection,
-                            args=(node_id, client_socket, addr)
-                        )
-                        thread.daemon = True
-                        thread.start()
-                    except socket.timeout:
-                        continue
-                    except Exception as e:
-                        if self.running:
-                            print("❌ Server error for {}: {}".format(node_id, e))
-            except Exception as e:
-                print("❌ Failed to start server for {}: {}".format(node_id, e))
+        # Get the Mininet node
+        node = self.topology.get_node(node_id)
+        if not node:
+            print("❌ Node {} not found in topology".format(node_id))
+            return
         
-        thread = threading.Thread(target=server_thread)
-        thread.daemon = True
-        thread.start()
-        self.server_threads[node_id] = thread
+        try:
+            # Run the server script within the node's namespace
+            # Use popen to run it in background
+            import os
+            cmd = 'python3 {} {}'.format(server_script, node_id)
+            proc = node.popen(cmd, shell=True)
+            
+            self.servers[node_id] = proc
+            print("📡 Server started for {} in node namespace (PID: {})".format(
+                node_id, proc.pid if hasattr(proc, 'pid') else 'unknown'
+            ))
+        except Exception as e:
+            print("❌ Failed to start server for {}: {}".format(node_id, e))
     
     def _handle_connection(self, node_id: str, client_socket: socket.socket, addr):
         """Handle incoming connection"""
