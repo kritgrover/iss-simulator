@@ -104,20 +104,16 @@ class ISSTopology:
         
         info("🔨 Building Mininet topology...\n")
         
-        # Create network - use UserSwitch which doesn't require an external controller
-        # This is simpler for basic L2 switching without OpenFlow features
+        # Create network - use OVSSwitch in standalone mode (no controller needed)
+        # OVS can work as a simple L2 switch without OpenFlow controller
         try:
-            self.net = Mininet(controller=None, link=TCLink, switch=UserSwitch)
-            info("📡 Using UserSwitch (no external controller required)\n")
+            # Create network without controller - OVS will work in standalone mode
+            self.net = Mininet(controller=None, link=TCLink, switch=OVSSwitch)
+            info("📡 Using OVS switch in standalone mode (no controller required)\n")
         except Exception as e1:
-            # Fall back to OVS with controller
-            try:
-                self.net = Mininet(controller=Controller, link=TCLink, switch=OVSSwitch)
-                self.net.addController('c0')
-                info("📡 Using OVS switch with default controller\n")
-            except Exception as e2:
-                error("❌ Failed to create network. Tried UserSwitch: {}, OVS: {}\n".format(e1, e2))
-                raise RuntimeError("Could not initialize Mininet network. Please install controller: sudo apt-get install openflow-switch openflow-controller")
+            error("❌ Failed to create network with OVS standalone: {}\n".format(e1))
+            error("💡 Try installing OpenVSwitch: sudo apt-get install openvswitch-switch\n")
+            raise RuntimeError("Could not initialize Mininet network. Error: {}".format(e1))
         
         # Add switch for ground station network
         self.switch = self.net.addSwitch('s1')
@@ -161,6 +157,18 @@ class ISSTopology:
         
         info("🚀 Starting Mininet network...\n")
         self.net.start()
+        
+        # Configure OVS switch to work in standalone mode (no controller)
+        if self.switch and hasattr(self.switch, 'cmd'):
+            try:
+                # Set switch to fail-mode=standalone (no controller needed)
+                self.switch.cmd('ovs-vsctl set-fail-mode', self.switch.name, 'standalone')
+                # Remove any existing controller connections
+                self.switch.cmd('ovs-vsctl del-controller', self.switch.name)
+                info("✅ Configured {} to run in standalone mode\n".format(self.switch.name))
+            except Exception as e:
+                # If ovs-vsctl commands fail, switch might still work
+                info("⚠️  Could not configure standalone mode (may still work): {}\n".format(e))
         
         # Give network a moment to fully initialize interfaces
         import time
