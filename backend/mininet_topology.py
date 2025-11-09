@@ -10,7 +10,7 @@ Creates a network topology with:
 import math
 from typing import Dict, List, Optional, Tuple
 from mininet.net import Mininet
-from mininet.node import Host, OVSSwitch, Controller
+from mininet.node import Host, OVSSwitch, Controller, RemoteController, UserSwitch
 from mininet.link import TCLink
 from mininet.cli import CLI
 from mininet.log import setLogLevel, info, error
@@ -104,11 +104,20 @@ class ISSTopology:
         
         info("🔨 Building Mininet topology...\n")
         
-        # Create network
-        self.net = Mininet(controller=Controller, link=TCLink, switch=OVSSwitch)
-        
-        # Add controller
-        self.net.addController('c0')
+        # Create network - use UserSwitch which doesn't require an external controller
+        # This is simpler for basic L2 switching without OpenFlow features
+        try:
+            self.net = Mininet(controller=None, link=TCLink, switch=UserSwitch)
+            info("📡 Using UserSwitch (no external controller required)\n")
+        except Exception as e1:
+            # Fall back to OVS with controller
+            try:
+                self.net = Mininet(controller=Controller, link=TCLink, switch=OVSSwitch)
+                self.net.addController('c0')
+                info("📡 Using OVS switch with default controller\n")
+            except Exception as e2:
+                error("❌ Failed to create network. Tried UserSwitch: {}, OVS: {}\n".format(e1, e2))
+                raise RuntimeError("Could not initialize Mininet network. Please install controller: sudo apt-get install openflow-switch openflow-controller")
         
         # Add switch for ground station network
         self.switch = self.net.addSwitch('s1')
