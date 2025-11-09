@@ -9,7 +9,7 @@ from collections import deque
 from tle_fetcher import TLEFetcher
 from orbital_tracker import OrbitalTracker
 from link_budget_calculator import LinkBudgetCalculator
-from dtn_bundle_manager import DTNBundleManager, BundlePriority
+from dtn_bundle_manager import DTNBundleManager, BundlePriority, BundleStatus
 
 app = FastAPI()
 
@@ -195,11 +195,69 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 station_contact_states
             )
             
-            # Complete transmissions and generate ACKs
-            for bundle_id in completed_bundles:
-                ack = dtn_manager.complete_transmission(bundle_id)
-                if ack:
-                    dtn_manager.queue_ack(ack)
+            # Complete transmissions - receiver verifies checksum and generates ACK/NAK
+            for bundle_info in completed_bundles:
+                if isinstance(bundle_info, tuple):
+                    bundle_id, data_rate_bps = bundle_info
+                else:
+                    # Backward compatibility
+                    bundle_id = bundle_info
+                    data_rate_bps = 100_000_000.0
+                
+                bundle = dtn_manager.bundles.get(bundle_id)
+                if bundle:
+                    # Receiver verifies checksum and generates ACK/NAK
+                    # Note: complete_transmission simulates receiver-side processing
+                    ack_or_nak = dtn_manager.complete_transmission(bundle_id, data_rate_bps)
+                    
+                    if ack_or_nak:
+                        # Create pending acknowledgment on sender side
+                        # This tracks that we're waiting for ACK/NAK (supports timeout logic)
+                        from_station = bundle.current_custodian
+                        to_station = bundle.forwarded_to if bundle.forwarded_to else "unknown"
+                        
+                        now = datetime.now(timezone.utc)
+                        from dtn_bundle_manager import PendingAcknowledgment
+                        pending_ack = PendingAcknowledgment(
+                            bundle_id=bundle_id,
+                            from_station=from_station,
+                            to_station=to_station,
+                            transmitted_at=now,
+                            timeout_seconds=dtn_manager.ACK_TIMEOUT_SECONDS,
+                            retransmission_count=0,
+                            max_retries=dtn_manager.MAX_RETRIES,
+                            data_rate_bps=data_rate_bps
+                        )
+                        dtn_manager.pending_acknowledgments[bundle_id] = pending_ack
+                        bundle.status = BundleStatus.WAITING_ACK
+                        
+                        # Immediately process ACK/NAK at sender (simulate instant delivery)
+                        # In real system, ACK/NAK would travel over the network with potential delays
+                        if ack_or_nak.get("type") == "ack":
+                            # Process ACK at sender - removes bundle from queue and pending_ack
+                            dtn_manager.process_ack(bundle_id, ack_or_nak)
+                        elif ack_or_nak.get("type") == "nak":
+                            # Process NAK at sender - will update retry count and schedule retransmission
+                            dtn_manager.process_nak(bundle_id, ack_or_nak)
+                            # If retransmission is needed, bundle status is set to QUEUED
+                            # and will be picked up in the transmission logic below
+            
+            # Check for timeouts in pending acknowledgments
+            retransmitted_bundles_info = dtn_manager.check_timeouts(station_contact_states)
+            
+            # Store retransmission info for bundles that need to be retransmitted
+            retransmission_map = {}  # bundle_id -> (retry_count, data_rate_bps)
+            retransmitted_bundle_ids = []
+            for retrans_info in retransmitted_bundles_info:
+                if isinstance(retrans_info, tuple) and len(retrans_info) == 3:
+                    bundle_id, retry_count, data_rate_bps = retrans_info
+                    retransmission_map[bundle_id] = (retry_count, data_rate_bps)
+                    retransmitted_bundle_ids.append(bundle_id)
+                else:
+                    # Backward compatibility
+                    retransmitted_bundle_ids.append(retrans_info)
+            
+            # Note: Retransmitted bundles are now in QUEUED status and will be picked up below
             
             # Process DTN bundles - start new transmissions or forward
             for station_data in stations_data:
@@ -212,14 +270,20 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 if not queue:
                     continue  # No bundles to process
                 
-                # Check if this station is already transmitting
+                # Check if this station is already transmitting or waiting for ACK
                 is_transmitting = any(
                     t.from_station == station_id 
                     for t in dtn_manager.active_transmissions.values()
                 )
                 
-                if is_transmitting:
-                    continue  # Already transmitting, don't start another
+                # Also check if station is waiting for ACK on any bundle
+                is_waiting_ack = any(
+                    pending.from_station == station_id
+                    for pending in dtn_manager.pending_acknowledgments.values()
+                )
+                
+                if is_transmitting or is_waiting_ack:
+                    continue  # Already transmitting or waiting for ACK, don't start another
                 
                 # Queue is now pre-sorted by priority in dtn_bundle_manager
                 # So we can just take the first bundle - it's guaranteed to be highest priority
@@ -246,13 +310,31 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     data_rate_bps = link_budget.get("data_rate_bps", 0)
                     
                     if data_rate_bps > 0:
-                        # Start transmission of HIGHEST PRIORITY bundle to ISS
-                        print(f"🛰️  {station_id.upper()} has ISS contact - transmitting {next_bundle.priority.value} priority bundle to ISS")
+                        # Check if this is a retransmission
+                        # Check if this is a retransmission (from timeout or NAK)
+                        retry_count = None  # None means use stored value or 0
+                        if next_bundle_id in retransmission_map:
+                            retry_count, stored_data_rate = retransmission_map[next_bundle_id]
+                            # Use stored data rate if available, otherwise use calculated one
+                            if stored_data_rate > 0:
+                                data_rate_bps = stored_data_rate
+                        
+                        # start_transmission will get retry_count from bundle_retry_counts if None
+                        retry_msg = ""
+                        if retry_count is not None and retry_count > 0:
+                            retry_msg = f" (retry {retry_count + 1})"
+                        elif next_bundle_id in dtn_manager.bundle_retry_counts:
+                            retry_count_stored = dtn_manager.bundle_retry_counts[next_bundle_id]
+                            if retry_count_stored > 0:
+                                retry_msg = f" (retry {retry_count_stored + 1})"
+                        
+                        print(f"🛰️  {station_id.upper()} has ISS contact - transmitting {next_bundle.priority.value} priority bundle to ISS{retry_msg}")
                         dtn_manager.start_transmission(
                             next_bundle_id,
                             station_id,
                             "ISS",
-                            data_rate_bps
+                            data_rate_bps,
+                            retransmission_count=retry_count
                         )
                 
                 # Case 2: This station can't see ISS
@@ -263,7 +345,15 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         
                         # Only forward if we haven't already visited the active station
                         if current_active_station not in visited_stations:
-                            print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to ACTIVE station {current_active_station.upper()} for immediate ISS contact")
+                            # Check if this is a retransmission
+                            retry_count = None
+                            if next_bundle_id in retransmission_map:
+                                retry_count, stored_data_rate = retransmission_map[next_bundle_id]
+                            elif next_bundle_id in dtn_manager.bundle_retry_counts:
+                                retry_count = dtn_manager.bundle_retry_counts[next_bundle_id]
+                            
+                            retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
+                            print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to ACTIVE station {current_active_station.upper()}{retry_msg} for immediate ISS contact")
                             
                             # Use ground link (fast, 100 Mbps)
                             ground_link_bps = 100_000_000
@@ -271,7 +361,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                 next_bundle_id,
                                 station_id,
                                 current_active_station,
-                                ground_link_bps
+                                ground_link_bps,
+                                retransmission_count=retry_count
                             )
                             continue  # Don't check for other forwarding options
                     
@@ -295,7 +386,15 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             better_stations.sort(key=lambda s: s["next_pass_minutes"])
                             next_hop_station = better_stations[0]["id"]
                             
-                            print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_station.upper()} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
+                            # Check if this is a retransmission
+                            retry_count = None
+                            if next_bundle_id in retransmission_map:
+                                retry_count, stored_data_rate = retransmission_map[next_bundle_id]
+                            elif next_bundle_id in dtn_manager.bundle_retry_counts:
+                                retry_count = dtn_manager.bundle_retry_counts[next_bundle_id]
+                            
+                            retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
+                            print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_station.upper()}{retry_msg} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
                             
                             # Use ground link (fast, 100 Mbps)
                             ground_link_bps = 100_000_000
@@ -303,7 +402,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                 next_bundle_id,
                                 station_id,
                                 next_hop_station,
-                                ground_link_bps
+                                ground_link_bps,
+                                retransmission_count=retry_count
                             )
                         # else: No better option - keep bundle here and wait for our own pass
             

@@ -71,51 +71,11 @@ const TrafficFlowMonitor = ({
     setThroughputData(initialData);
   }, []);
 
-  // Use actual data rate from backend (Shannon-Hartley calculation)
-  useEffect(() => {
-    if (!linkStatus || linkStatus.connection_state === "IDLE") {
-      setUplinkBandwidth(0);
-      setDownlinkBandwidth(0);
-      return;
-    }
-
-    // Use actual data rate from backend in kbps
-    const dataRateKbps = linkStatus.data_rate_kbps || 0;
-    
-    // Uplink and downlink are similar for amateur radio (symmetric)
-    // Add small variation for visual interest
-    const variation = (Math.random() - 0.5) * 0.5;
-    
-    const uplinkRate = dataRateKbps + variation;
-    const downlinkRate = dataRateKbps * 1.2 + variation; // Slightly higher downlink
-    
-    setUplinkBandwidth(Math.max(0, uplinkRate));
-    setDownlinkBandwidth(Math.max(0, downlinkRate));
-
-  }, [linkStatus]);
-
-  // Update throughput graph
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setThroughputData(prev => {
-        const newData = [...prev.slice(1), {
-          time: '0s',
-          uplink: uplinkBandwidth,
-          downlink: downlinkBandwidth,
-        }];
-        return newData;
-      });
-    }, 1500);
-
-    return () => clearInterval(interval);
-  }, [uplinkBandwidth, downlinkBandwidth]);
-
-  // Calculate ALL bundles across network
-  const allBundles = Object.values(allQueues).flat();
-  const allQueuedBundles = allBundles.filter(b => b.status === "QUEUED");
-
   // Update queue stats
   useEffect(() => {
+    const allBundles = Object.values(allQueues).flat();
+    const allQueuedBundles = allBundles.filter(b => b.status === "QUEUED");
+    
     if (allBundles.length === 0) {
       setQueueStats({ avgTime: 0, maxDepth: 0 });
       return;
@@ -131,27 +91,93 @@ const TrafficFlowMonitor = ({
     });
   }, [allQueues]);
 
+  // Calculate ALL bundles across network (for rendering)
+  const allBundles = Object.values(allQueues).flat();
+  const allQueuedBundles = allBundles.filter(b => b.status === "QUEUED");
+
+  // Update bandwidth based on visible links or link status
+  // Priority: visibleLinks > linkStatus > 0
   useEffect(() => {
-    if (!visibleLinks || visibleLinks.length === 0) {
+    let dataRateKbps = 0;
+    
+    // First priority: Use visibleLinks (all stations that can see ISS)
+    // Backend already filters to only include visible stations, so we trust the data_rate_kbps values
+    if (visibleLinks && visibleLinks.length > 0) {
+      // Sum up data rates from all visible stations
+      // Include all visible links - backend ensures they're actually visible
+      dataRateKbps = visibleLinks.reduce((sum, link) => {
+        const rate = link.data_rate_kbps || 0;
+        // Only include positive data rates (stations with actual connection)
+        return sum + (rate > 0 ? rate : 0);
+      }, 0);
+    } 
+    // Fallback: Use linkStatus from active station
+    else if (linkStatus && linkStatus.connection_state !== "IDLE" && linkStatus.data_rate_kbps) {
+      dataRateKbps = linkStatus.data_rate_kbps || 0;
+    }
+    
+    // If we have a valid data rate, calculate uplink/downlink
+    if (dataRateKbps > 0) {
+      // Add small variation for visual interest (but keep it stable)
+      const variation = (Math.random() - 0.5) * 0.3; // Reduced variation for more stable display
+      
+      const uplinkRate = Math.max(0, dataRateKbps + variation);
+      const downlinkRate = Math.max(0, dataRateKbps * 1.2 + variation); // Slightly higher downlink
+      
+      setUplinkBandwidth(uplinkRate);
+      setDownlinkBandwidth(downlinkRate);
+    } else {
+      // No connection - set to 0
       setUplinkBandwidth(0);
       setDownlinkBandwidth(0);
-      return;
     }
+    
+    // Debug logging (development only)
+    // Check if we're in development mode using a safe method
+    const isDev = typeof window !== 'undefined' && 
+                  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    
+    if (isDev && dataRateKbps > 0) {
+      console.log('[TrafficFlowMonitor] Bandwidth update:', {
+        visibleLinksCount: visibleLinks?.length || 0,
+        dataRateKbps: dataRateKbps.toFixed(2),
+        linkStatusState: linkStatus?.connection_state,
+        hasVisibleLinks: (visibleLinks && visibleLinks.length > 0),
+        visibleLinksData: visibleLinks?.map(l => ({ 
+          station: l.station_name, 
+          rate: l.data_rate_kbps,
+          state: l.connection_state 
+        }))
+      });
+    }
+  }, [linkStatus, visibleLinks]);
 
-    // Sum up data rates from all visible stations
-    const totalDataRateKbps = visibleLinks.reduce((sum, link) => {
-      return sum + (link.data_rate_kbps || 0);
-    }, 0);
-    
-    const variation = (Math.random() - 0.5) * 0.5;
-    
-    const uplinkRate = totalDataRateKbps + variation;
-    const downlinkRate = totalDataRateKbps * 1.2 + variation;
-    
-    setUplinkBandwidth(Math.max(0, uplinkRate));
-    setDownlinkBandwidth(Math.max(0, downlinkRate));
+  // Update throughput graph - runs more frequently to catch ISS visibility changes
+  useEffect(() => {
+    // Immediately update the graph when bandwidth changes (don't wait for interval)
+    setThroughputData(prev => {
+      const newData = [...prev.slice(1), {
+        time: '0s',
+        uplink: uplinkBandwidth,
+        downlink: downlinkBandwidth,
+      }];
+      return newData;
+    });
 
-  }, [visibleLinks]);
+    // Also update periodically to keep the graph moving
+    const interval = setInterval(() => {
+      setThroughputData(prev => {
+        const newData = [...prev.slice(1), {
+          time: '0s',
+          uplink: uplinkBandwidth,
+          downlink: downlinkBandwidth,
+        }];
+        return newData;
+      });
+    }, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, [uplinkBandwidth, downlinkBandwidth]);
 
   // Track last 5 delivered bundles
   useEffect(() => {
