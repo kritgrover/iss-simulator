@@ -339,9 +339,29 @@ class DTNBundleManager:
         to_station = bundle.forwarded_to
         from_station = bundle.current_custodian
         
+        # Check if transmission was already completed (ACK already processed)
+        # This can happen if complete_transmission is called after process_ack
         if not to_station:
-            print(f"⚠️  Cannot complete transmission for {bundle_id[:8]} - no destination set")
-            return None
+            # Check if bundle is already delivered or in a final state
+            if bundle.status == BundleStatus.DELIVERED:
+                # Already delivered, nothing to do
+                return None
+            # Check if bundle is waiting for ACK (transmission completed, waiting for response)
+            if bundle.status == BundleStatus.WAITING_ACK:
+                # Transmission completed, ACK is being processed, nothing to do here
+                return None
+            # If bundle is in a transmitting state but no forwarded_to, it might be a race condition
+            # Try to get destination from active transmission
+            if bundle_id in self.active_transmissions:
+                to_station = self.active_transmissions[bundle_id].to_station
+                if to_station:
+                    bundle.forwarded_to = to_station  # Restore it
+                else:
+                    print(f"⚠️  Cannot complete transmission for {bundle_id[:8]} - no destination set")
+                    return None
+            else:
+                # No active transmission and no forwarded_to - likely already completed
+                return None
         
         # Receiver verifies checksum of received bundle
         # Calculate checksum of the received payload

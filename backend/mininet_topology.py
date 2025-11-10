@@ -38,12 +38,12 @@ class ISSTopology:
     # Ground link parameters (terrestrial fiber/backbone)
     GROUND_BANDWIDTH_MBPS = 100  # 100 Mbps
     GROUND_DELAY_MS = 50  # 50ms base delay
-    GROUND_LOSS_PERCENT = 0.01  # 0.01% packet loss
+    GROUND_LOSS_PERCENT = 20  # 20% packet loss
     
     # Base ISS link parameters (will be updated dynamically)
     ISS_BASE_BANDWIDTH_MBPS = 0.2  # 200 kbps
     ISS_BASE_DELAY_MS = 10  # 10ms base delay
-    ISS_BASE_LOSS_PERCENT = 2.0  # 2% base packet loss
+    ISS_BASE_LOSS_PERCENT = 20 # 20% base packet loss
     
     def __init__(self, ground_stations: List[Dict]):
         """
