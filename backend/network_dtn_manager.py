@@ -292,7 +292,7 @@ class NetworkDTNManager(DTNBundleManager):
     
     def send_bundle_over_network(self, bundle_id: str, from_node: str, to_node: str) -> bool:
         """
-        Send bundle over network using TCP socket
+        Send bundle over network using TCP socket from within source node's namespace
         
         Args:
             bundle_id: Bundle ID to send
@@ -320,44 +320,85 @@ class NetworkDTNManager(DTNBundleManager):
         # Extract IP address (remove /24 subnet)
         dest_ip = dest_ip.split('/')[0]
         
+        # Get source node to run client from its namespace
+        source_node = self.topology.get_node(from_node)
+        if not source_node:
+            print("❌ Source node {} not found in topology".format(from_node))
+            return False
+        
+        # Get path to client script
+        import os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        client_script = os.path.join(script_dir, 'mininet_nodes', 'dtn_client.py')
+        
+        # Escape payload for shell (handle quotes and special chars)
+        import shlex
+        payload_escaped = shlex.quote(bundle.payload)
+        
+        # Build command to run client script within source node's namespace
+        cmd = 'python3 {} {} {} {} {} {} {}'.format(
+            client_script,
+            dest_ip,
+            bundle_id,
+            bundle.source_station,
+            bundle.destination_station,
+            payload_escaped,
+            bundle.priority.value
+        )
+        
         try:
-            # Create socket connection
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(30.0)  # 30 second timeout
-            sock.connect((dest_ip, self.DTN_PORT))
+            # Run client script within source node's namespace
+            # This ensures the socket connection uses the node's network namespace
+            # cmd() runs synchronously and captures stdout/stderr
+            result = source_node.cmd(cmd)
             
-            # Prepare bundle message
-            bundle_message = {
-                'type': 'bundle',
-                'bundle': {
-                    'bundle_id': bundle.bundle_id,
-                    'source_station': bundle.source_station,
-                    'destination_station': bundle.destination_station,
-                    'payload': bundle.payload,
-                    'priority': bundle.priority.value,
-                    'checksum': bundle.checksum,
-                    'size_bytes': bundle.size_bytes
+            # Check result output for success/failure indicators
+            result_lower = result.lower()
+            
+            # Check for success indicators
+            if '✅ ack received' in result_lower or 'ack received' in result_lower:
+                # Bundle was successfully sent and ACK received
+                ack_data = {
+                    'type': 'ack',
+                    'bundle_id': bundle_id,
+                    'from_station': to_node,
+                    'to_station': from_node,
+                    'ack_type': 'custody_accepted' if to_node != 'iss' else 'delivered',
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'checksum': bundle.checksum
                 }
-            }
+                self._handle_ack_received(to_node, ack_data)
+                return True
             
-            # Send message
-            success = self._send_message(sock, bundle_message)
+            # Check for failure indicators
+            elif '❌' in result or 'nak received' in result_lower or 'error' in result_lower:
+                # Transmission failed
+                nak_data = {
+                    'type': 'nak',
+                    'bundle_id': bundle_id,
+                    'from_station': to_node,
+                    'to_station': from_node,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'reason': 'transmission_failed'
+                }
+                self._handle_nak_received(to_node, nak_data)
+                return False
             
-            if success:
-                # Wait for ACK/NAK
-                response = self._receive_message(sock)
-                if response:
-                    if response.get('type') == 'ack':
-                        self._handle_ack_received(to_node, response)
-                    elif response.get('type') == 'nak':
-                        self._handle_nak_received(to_node, response)
+            # If we can't determine from output, check if command completed
+            # (cmd() will raise exception if command fails badly)
+            # Default to failure if output is suspicious
+            if not result or len(result.strip()) == 0:
+                print("⚠️  Client script returned no output for bundle {}".format(bundle_id[:8]))
+                return False
             
-            sock.close()
-            return success
-            
+            # If we got here, assume success (client completed without errors)
+            # But log a warning since we couldn't parse the result
+            print("⚠️  Could not parse client output for bundle {}, assuming success".format(bundle_id[:8]))
+            return True
+                
         except Exception as e:
-            print("❌ Error sending bundle {} to {}: {}".format(
-                bundle_id[:8], to_node, e
+            print("❌ Error sending bundle {} from {} to {}: {}".format(
+                bundle_id[:8], from_node, to_node, e
             ))
             return False
     
@@ -375,14 +416,24 @@ class NetworkDTNManager(DTNBundleManager):
         )
         
         if transmission:
+            # Track network send status
+            if not hasattr(self, '_network_send_status'):
+                self._network_send_status = {}  # bundle_id -> (success: bool, completed: bool)
+            
+            # Initialize status as pending
+            self._network_send_status[bundle_id] = {'success': False, 'completed': False}
+            
             # Send bundle over network in background thread
             def send_thread():
                 # Simulate transmission time based on data rate
                 transmission_time = transmission.size_bytes / (data_rate_bps / 8)
                 time.sleep(transmission_time)
                 
-                # Send bundle
+                # Send bundle over network
                 success = self.send_bundle_over_network(bundle_id, from_station, to_station)
+                
+                # Update status
+                self._network_send_status[bundle_id] = {'success': success, 'completed': True}
                 
                 if success:
                     # Mark as complete
@@ -396,4 +447,34 @@ class NetworkDTNManager(DTNBundleManager):
             thread.start()
         
         return transmission
+    
+    def update_transmissions(self, delta_time_sec: float, 
+                           station_contact_states: Dict[str, bool]) -> List[Tuple[str, float]]:
+        """
+        Update all active transmissions - override to wait for network sends
+        """
+        # First, update simulated progress
+        completed = super().update_transmissions(delta_time_sec, station_contact_states)
+        
+        # Filter out transmissions that haven't actually completed over the network
+        if hasattr(self, '_network_send_status'):
+            actually_completed = []
+            for bundle_id, data_rate_bps in completed:
+                status = self._network_send_status.get(bundle_id, {'completed': True, 'success': True})
+                if status['completed'] and status['success']:
+                    # Network send succeeded, transmission is really complete
+                    actually_completed.append((bundle_id, data_rate_bps))
+                elif status['completed'] and not status['success']:
+                    # Network send failed, but simulation marked it complete
+                    # Put it back in active_transmissions if it's not there
+                    if bundle_id not in self.active_transmissions:
+                        bundle = self.bundles.get(bundle_id)
+                        if bundle:
+                            bundle.status = BundleStatus.QUEUED
+                            print("⚠️  Bundle {} network send failed, requeuing".format(bundle_id[:8]))
+                # else: Network send still in progress, wait for it
+            
+            return actually_completed
+        
+        return completed
 
