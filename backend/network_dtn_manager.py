@@ -448,8 +448,7 @@ class NetworkDTNManager(DTNBundleManager):
         
         return transmission
     
-    def update_transmissions(self, delta_time_sec: float, 
-                           station_contact_states: Dict[str, bool]) -> List[Tuple[str, float]]:
+    def update_transmissions(self, delta_time_sec, station_contact_states):
         """
         Update all active transmissions - override to wait for network sends
         """
