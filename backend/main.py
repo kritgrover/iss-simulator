@@ -572,7 +572,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         "data_rate_kbps": link_budget.get("data_rate_kbps", 0),
                     })
                     
-                    # Update Mininet link parameters if enabled
+                    # Update Mininet link parameters if enabled (only for visible stations)
                     if USE_MININET and topology and link_param_manager:
                         mininet_params = link_param_manager.link_budget_to_mininet_params(link_budget)
                         topology.update_iss_link(
@@ -581,14 +581,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             mininet_params["delay_ms"],
                             mininet_params["loss_percent"]
                         )
-                elif USE_MININET and topology and link_param_manager:
-                    # Station not visible - set link to minimal parameters
-                    topology.update_iss_link(
-                        station_data["id"],
-                        0.001,  # Minimal bandwidth
-                        100.0,  # High delay
-                        50.0    # High loss
-                    )
+                # Note: We don't update links for non-visible stations to avoid spam
+                # Links will retain their last values or remain at initial state
             
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()
