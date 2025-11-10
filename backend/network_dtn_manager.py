@@ -312,9 +312,18 @@ class NetworkDTNManager(DTNBundleManager):
             print("❌ Topology not set, cannot send bundle")
             return False
         
-        dest_ip = self.topology.get_node_ip(to_node)
+        # Handle ISS node name (case-insensitive)
+        node_id_for_lookup = to_node.lower() if to_node.lower() == 'iss' else to_node
+        
+        dest_ip = self.topology.get_node_ip(node_id_for_lookup)
         if not dest_ip:
-            print("❌ Cannot find IP for node {}".format(to_node))
+            print("❌ Cannot find IP for node {} (looked up as: {})".format(to_node, node_id_for_lookup))
+            # Debug: Check if node exists
+            node = self.topology.get_node(node_id_for_lookup)
+            if node:
+                print("   Node exists but IP() returned None - network may not be fully started")
+            else:
+                print("   Node does not exist in topology")
             return False
         
         # Extract IP address (remove /24 subnet)
@@ -363,15 +372,47 @@ class NetworkDTNManager(DTNBundleManager):
                     'bundle_id': bundle_id,
                     'from_station': to_node,
                     'to_station': from_node,
-                    'ack_type': 'custody_accepted' if to_node != 'iss' else 'delivered',
+                    'ack_type': 'custody_accepted' if to_node.lower() != 'iss' else 'delivered',
                     'timestamp': datetime.now(timezone.utc).isoformat(),
                     'checksum': bundle.checksum
                 }
                 self._handle_ack_received(to_node, ack_data)
                 return True
             
-            # Check for failure indicators
+            # Check for failure indicators and extract detailed error information
             elif '❌' in result or 'nak received' in result_lower or 'error' in result_lower:
+                # Extract detailed error information
+                error_reason = 'unknown'
+                error_details = []
+                
+                # Check for specific error types
+                if 'connection refused' in result_lower or 'connectionrefusederror' in result_lower:
+                    error_reason = 'connection_refused'
+                    error_details.append("Destination server not listening or not reachable")
+                elif 'timeout' in result_lower or 'timed out' in result_lower:
+                    error_reason = 'timeout'
+                    error_details.append("Connection or operation timed out")
+                elif 'no route to host' in result_lower or 'network is unreachable' in result_lower:
+                    error_reason = 'no_route'
+                    error_details.append("No network route to destination")
+                elif 'checksum' in result_lower and 'mismatch' in result_lower:
+                    error_reason = 'checksum_mismatch'
+                    error_details.append("Checksum verification failed")
+                elif 'nak received' in result_lower:
+                    error_reason = 'nak_received'
+                    # Try to extract NAK reason from output
+                    if 'reason' in result_lower:
+                        error_details.append("NAK received from receiver")
+                
+                # Log detailed error information
+                print("❌ Transmission failed for bundle {}: {}".format(bundle_id[:8], error_reason))
+                if error_details:
+                    for detail in error_details:
+                        print("   → {}".format(detail))
+                # Also print the raw output for debugging
+                if result.strip():
+                    print("   Raw output: {}".format(result.strip()[:200]))  # Limit length
+                
                 # Transmission failed
                 nak_data = {
                     'type': 'nak',
@@ -379,7 +420,7 @@ class NetworkDTNManager(DTNBundleManager):
                     'from_station': to_node,
                     'to_station': from_node,
                     'timestamp': datetime.now(timezone.utc).isoformat(),
-                    'reason': 'transmission_failed'
+                    'reason': error_reason
                 }
                 self._handle_nak_received(to_node, nak_data)
                 return False
@@ -388,18 +429,24 @@ class NetworkDTNManager(DTNBundleManager):
             # (cmd() will raise exception if command fails badly)
             # Default to failure if output is suspicious
             if not result or len(result.strip()) == 0:
-                print("⚠️  Client script returned no output for bundle {}".format(bundle_id[:8]))
+                print("⚠️  Client script returned no output for bundle {} - possible timeout or crash".format(bundle_id[:8]))
                 return False
             
             # If we got here, assume success (client completed without errors)
             # But log a warning since we couldn't parse the result
             print("⚠️  Could not parse client output for bundle {}, assuming success".format(bundle_id[:8]))
+            print("   Output: {}".format(result.strip()[:200]))
             return True
                 
         except Exception as e:
-            print("❌ Error sending bundle {} from {} to {}: {}".format(
-                bundle_id[:8], from_node, to_node, e
+            # Capture exception details
+            error_type = type(e).__name__
+            error_msg = str(e)
+            print("❌ Exception sending bundle {} from {} to {}: {} - {}".format(
+                bundle_id[:8], from_node, to_node, error_type, error_msg
             ))
+            import traceback
+            print("   Traceback: {}".format(traceback.format_exc().split('\n')[-2]))  # Last meaningful line
             return False
     
     def start_transmission(self, bundle_id: str, from_station: str,

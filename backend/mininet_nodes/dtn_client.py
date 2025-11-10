@@ -133,8 +133,23 @@ def send_bundle(dest_ip: str, dest_port: int, bundle_id: str, source_station: st
         print("⚠️  No response received")
         return False
         
+    except socket.timeout:
+        print("❌ Error sending bundle: Connection timeout (30s)")
+        return False
+    except ConnectionRefusedError:
+        print("❌ Error sending bundle: Connection refused - server not listening on {}:{}".format(dest_ip, dest_port))
+        return False
+    except OSError as e:
+        if e.errno == 113:  # No route to host
+            print("❌ Error sending bundle: No route to host {}:{}".format(dest_ip, dest_port))
+        elif e.errno == 111:  # Connection refused
+            print("❌ Error sending bundle: Connection refused - server not listening")
+        else:
+            print("❌ Error sending bundle: Network error (errno {}): {}".format(e.errno, e))
+        return False
     except Exception as e:
-        print("❌ Error sending bundle: {}".format(e))
+        error_type = type(e).__name__
+        print("❌ Error sending bundle: {} - {}".format(error_type, e))
         return False
 
 

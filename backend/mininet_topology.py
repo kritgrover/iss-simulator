@@ -295,14 +295,21 @@ class ISSTopology:
         info("🗑️  Removed ISS link to {}\n".format(station_id))
     
     def get_node(self, node_id: str) -> Optional[Host]:
-        """Get a node by ID"""
-        if node_id == 'iss':
+        """Get a node by ID (case-insensitive for ISS)"""
+        node_id_lower = node_id.lower()
+        if node_id_lower == 'iss':
             return self.iss_node
         return self.station_nodes.get(node_id)
     
     def get_node_ip(self, node_id: str) -> Optional[str]:
-        """Get IP address of a node"""
-        node = self.get_node(node_id)
+        """Get IP address of a node (case-insensitive for ISS)"""
+        # Handle ISS case-insensitively
+        node_id_lower = node_id.lower()
+        if node_id_lower == 'iss':
+            node = self.iss_node
+        else:
+            node = self.get_node(node_id)
+        
         if node:
             try:
                 ip = node.IP()
