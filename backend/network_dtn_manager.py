@@ -38,7 +38,12 @@ class NetworkDTNManager(DTNBundleManager):
             stations: List of ground station dictionaries
             topology: ISSTopology instance (optional, for IP lookups)
         """
-        super().__init__(stations)
+        # Get mesh connections from topology if available
+        mesh_connections = None
+        if topology:
+            mesh_connections = topology.get_mesh_connections()
+        
+        super().__init__(stations, mesh_connections=mesh_connections)
         self.topology = topology
         self.servers = {}  # node_id -> server socket
         self.server_threads = {}  # node_id -> thread
@@ -558,6 +563,25 @@ class NetworkDTNManager(DTNBundleManager):
         )
         
         if transmission:
+            # Create pending acknowledgment for timeout handling
+            # In mininet, ACK comes back through network, but we need pending_ack for timeout tracking
+            bundle = self.bundles.get(bundle_id)
+            if bundle:
+                from dtn_bundle_manager import PendingAcknowledgment
+                now = datetime.now(timezone.utc)
+                pending_ack = PendingAcknowledgment(
+                    bundle_id=bundle_id,
+                    from_station=from_station,  # Current custodian (sender)
+                    to_station=to_station,  # Destination
+                    transmitted_at=now,
+                    timeout_seconds=self.ACK_TIMEOUT_SECONDS,
+                    retransmission_count=retransmission_count or 0,
+                    max_retries=self.MAX_RETRIES,
+                    data_rate_bps=data_rate_bps
+                )
+                self.pending_acknowledgments[bundle_id] = pending_ack
+                bundle.status = BundleStatus.WAITING_ACK
+            
             # Track network send status
             if not hasattr(self, '_network_send_status'):
                 self._network_send_status = {}  # bundle_id -> (success: bool, completed: bool, failure_reason: str)

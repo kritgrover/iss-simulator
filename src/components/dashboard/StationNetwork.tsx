@@ -14,6 +14,7 @@ interface StationNetworkProps {
   handoffInProgress?: boolean;
   activeStationId?: string;
   selectedStationId?: string;
+  meshConnections?: Array<{ from: string; to: string }>;
 }
 
 const StationNetwork = ({ 
@@ -24,7 +25,8 @@ const StationNetwork = ({
   visibleStationsCount = 0,
   handoffInProgress = false,
   activeStationId = '',
-  selectedStationId = ''
+  selectedStationId = '',
+  meshConnections = []
 }: StationNetworkProps) => {
   const [expandedStation, setExpandedStation] = useState<string | null>(null);
   const [highlightStation, setHighlightStation] = useState<string | null>(null);
@@ -74,6 +76,19 @@ const StationNetwork = ({
     }, otherStations[0]);
 
     return nextStation;
+  };
+
+  // Get connected stations for a given station
+  const getConnectedStations = (stationId: string): string[] => {
+    const connected: string[] = [];
+    meshConnections.forEach(conn => {
+      if (conn.from === stationId && !connected.includes(conn.to)) {
+        connected.push(conn.to);
+      } else if (conn.to === stationId && !connected.includes(conn.from)) {
+        connected.push(conn.from);
+      }
+    });
+    return connected;
   };
 
   return (
@@ -208,9 +223,18 @@ const StationNetwork = ({
                         Next: {station.nextPassTime}
                       </div>
                     )}
+                    {/* Show network connections */}
+                    {meshConnections.length > 0 && (() => {
+                      const connected = getConnectedStations(station.id);
+                      return connected.length > 0 ? (
+                        <div className="text-[9px] font-mono text-primary/70 mt-0.5">
+                          {connected.length} link{connected.length !== 1 ? 's' : ''}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                   
-                  {queueStats.total > 0 && (
+                  {(queueStats.total > 0 || (meshConnections.length > 0 && getConnectedStations(station.id).length > 0)) && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -281,12 +305,52 @@ const StationNetwork = ({
                 </div>
               )}
 
-              {/* Expanded Bundle Queue Details */}
-              {isExpanded && stationQueue.length > 0 && (
-                <div className="px-2 pb-2 border-t border-border/50 mt-1 pt-2">
-                  <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
-                    BUNDLE QUEUE DETAILS
-                  </div>
+              {/* Expanded Details */}
+              {isExpanded && (
+                <div className="px-2 pb-2 border-t border-border/50 mt-1 pt-2 space-y-3">
+                  {/* Network Connections */}
+                  {meshConnections.length > 0 && (() => {
+                    const connected = getConnectedStations(station.id);
+                    return connected.length > 0 ? (
+                      <div>
+                        <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
+                          NETWORK CONNECTIONS ({connected.length})
+                        </div>
+                        <div className="space-y-1">
+                          {connected.map(connectedId => {
+                            const connectedStation = stations.find(s => s.id === connectedId);
+                            return connectedStation ? (
+                              <div key={connectedId} className="flex items-center gap-2 p-1.5 rounded bg-primary/10 border border-primary/20">
+                                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                <span className="text-[10px] font-mono text-primary font-semibold">
+                                  {connectedStation.name}
+                                </span>
+                                <span className="text-[9px] text-secondary ml-auto">
+                                  {connectedStation.id}
+                                </span>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
+                          NETWORK CONNECTIONS
+                        </div>
+                        <div className="text-[10px] text-secondary/60 font-mono">
+                          No direct connections
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  
+                  {/* Bundle Queue Details */}
+                  {stationQueue.length > 0 && (
+                    <div>
+                      <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
+                        BUNDLE QUEUE DETAILS
+                      </div>
                   <div className="space-y-1 max-h-40 overflow-y-auto">
                     {stationQueue.map((bundle) => (
                       <div
@@ -351,7 +415,9 @@ const StationNetwork = ({
                         </div>
                       </div>
                     ))}
-                  </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

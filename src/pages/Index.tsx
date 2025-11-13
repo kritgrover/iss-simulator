@@ -124,6 +124,7 @@ const Index = () => {
                 handoffInProgress={handoffInProgress}
                 activeStationId={activeStationId}
                 selectedStationId={selectedStationId}
+                meshConnections={orbitalData?.mesh_connections ?? []}
               />
             </div>
           </ResizablePanel>

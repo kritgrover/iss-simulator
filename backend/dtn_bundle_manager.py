@@ -31,7 +31,8 @@ class DTNBundle:
     current_custodian: str = ""
     forwarded_to: Optional[str] = None
     delivered_at: Optional[datetime] = None
-    hops: List[str] = field(default_factory=list)
+    hops: List[str] = field(default_factory=list)  # Actual path taken
+    route: List[str] = field(default_factory=list)  # Planned route (source -> ... -> destination)
     size_bytes: int = 0
     checksum: int = 0
     
@@ -75,6 +76,7 @@ class DTNBundle:
             "forwarded_to": self.forwarded_to,
             "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
             "hops": self.hops,
+            "route": self.route,
             "age_seconds": (datetime.now(timezone.utc) - self.created_at).total_seconds(),
             "size_bytes": self.size_bytes,
             "checksum": self.checksum
@@ -139,7 +141,7 @@ class DTNBundleManager:
     ACK_TIMEOUT_SECONDS = 30.0
     MAX_RETRIES = 5
     
-    def __init__(self, stations: List[Dict]):
+    def __init__(self, stations: List[Dict], mesh_connections: Optional[List[Tuple[str, str]]] = None):
         self.stations = {s["id"]: s["name"] for s in stations}
         self.bundles: Dict[str, DTNBundle] = {}
         self.station_queues: Dict[str, List[str]] = {sid: [] for sid in self.stations.keys()}
@@ -148,9 +150,96 @@ class DTNBundleManager:
         self.pending_acknowledgments: Dict[str, PendingAcknowledgment] = {}  # Bundles waiting for ACK/NAK
         self.delivered_bundles: List[str] = []
         self.bundle_retry_counts: Dict[str, int] = {}  # Track retry counts for bundles
+        self.mesh_connections = mesh_connections or []  # List of (station1, station2) tuples
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
         print(f"   ACK timeout: {self.ACK_TIMEOUT_SECONDS}s, Max retries: {self.MAX_RETRIES}")
+    
+    def find_route(self, from_station: str, to_station: str, 
+                   stations_data: List[Dict], visited: Optional[List[str]] = None) -> Optional[List[str]]:
+        """
+        Find a route from source to destination using mesh connections and next pass times.
+        Uses BFS with preference for stations with sooner next passes.
+        
+        Args:
+            from_station: Source station ID
+            to_station: Destination station ID (can be "ISS" for final destination)
+            stations_data: List of station data dicts with next_pass_minutes
+            visited: Already visited stations (for loop prevention)
+            
+        Returns:
+            List of station IDs from source to destination station (or station that can reach ISS).
+            Route does NOT include "ISS" - ISS forwarding is handled separately.
+        """
+        if visited is None:
+            visited = []
+        
+        # Build adjacency list from mesh connections
+        adjacency = {}
+        for conn in self.mesh_connections:
+            station1, station2 = conn
+            if station1 not in adjacency:
+                adjacency[station1] = []
+            if station2 not in adjacency:
+                adjacency[station2] = []
+            adjacency[station1].append(station2)
+            adjacency[station2].append(station1)
+        
+        # If no mesh connections, fall back to direct connection or all stations
+        if not adjacency:
+            # Fallback: allow connection to any station (full mesh)
+            for station_id in self.stations.keys():
+                adjacency[station_id] = [s for s in self.stations.keys() if s != station_id]
+        
+        # If destination is ISS, find route to a station that can see ISS
+        # Otherwise, route to the specified station
+        target_station = to_station
+        if to_station == "ISS":
+            # Find stations that can see ISS (have upcoming passes)
+            station_lookup = {s["id"]: s for s in stations_data}
+            visible_stations = [
+                sid for sid in self.stations.keys() 
+                if sid != from_station and 
+                sid not in visited and
+                station_lookup.get(sid, {}).get("next_pass_minutes", 999999) > 0
+            ]
+            if not visible_stations:
+                return None  # No station can see ISS
+            # Prefer stations with sooner passes
+            visible_stations.sort(key=lambda sid: station_lookup.get(sid, {}).get("next_pass_minutes", 999999))
+            target_station = visible_stations[0]  # Route to station with soonest pass
+        
+        # BFS to find route
+        from collections import deque
+        queue = deque([(from_station, [from_station])])
+        visited_set = set(visited + [from_station])
+        
+        # Create lookup for station data
+        station_lookup = {s["id"]: s for s in stations_data}
+        
+        while queue:
+            current, path = queue.popleft()
+            
+            # Check if we reached target station
+            if current == target_station:
+                return path
+            
+            # Get neighbors
+            neighbors = adjacency.get(current, [])
+            
+            # Sort neighbors by next pass time (sooner passes first)
+            def get_next_pass(station_id: str) -> float:
+                station = station_lookup.get(station_id, {})
+                return station.get("next_pass_minutes", 999999)
+            
+            neighbors.sort(key=get_next_pass)
+            
+            for neighbor in neighbors:
+                if neighbor not in visited_set:
+                    visited_set.add(neighbor)
+                    queue.append((neighbor, path + [neighbor]))
+        
+        return None  # No route found
     
     def create_bundle(self, source_station: str, destination: str, 
                      payload: str, priority: str = "NORMAL", ttl_hours: int = 24) -> DTNBundle:
@@ -498,8 +587,55 @@ class DTNBundleManager:
             
             print(f"📨 Bundle {bundle_id[:8]} ACK received - custody transferred to {from_station.upper()}")
             print(f"   Path so far: {' → '.join(bundle.hops)}")
+            
+            # If route exists and we're not at final destination, prepare for next hop forwarding
+            # The forwarding logic in main.py will handle the actual forwarding
+            if bundle.route and len(bundle.route) > 0:
+                current_index = len(bundle.hops) - 1  # Current position in route
+                if current_index < len(bundle.route) - 1:
+                    # Not at final destination yet - route will be used for forwarding
+                    next_hop = bundle.route[current_index + 1]
+                    print(f"   Route: {' → '.join(bundle.route)}")
+                    print(f"   Next hop: {next_hop}")
         
         return True
+    
+    def get_next_hop_from_route(self, bundle_id: str) -> Optional[str]:
+        """
+        Get the next hop station from the bundle's route.
+        Returns None if route is complete or doesn't exist.
+        """
+        if bundle_id not in self.bundles:
+            return None
+        
+        bundle = self.bundles[bundle_id]
+        
+        # If no route, return None (will use existing forwarding logic)
+        if not bundle.route or len(bundle.route) == 0:
+            return None
+        
+        # Find current position in route
+        # Current custodian should be the last station in the route we've reached
+        current_custodian = bundle.current_custodian
+        
+        # Find index of current custodian in route
+        try:
+            current_index = bundle.route.index(current_custodian)
+        except ValueError:
+            # Current custodian not in route - might be at start
+            if bundle.route[0] == bundle.source_station:
+                current_index = 0
+            else:
+                return None  # Route doesn't match current state
+        
+        # Check if there's a next hop
+        if current_index < len(bundle.route) - 1:
+            next_hop = bundle.route[current_index + 1]
+            # Don't forward to a station we've already visited
+            if next_hop not in bundle.hops:
+                return next_hop
+        
+        return None  # Route complete or no valid next hop
     
     def process_nak(self, bundle_id: str, nak_data: Dict) -> bool:
         """

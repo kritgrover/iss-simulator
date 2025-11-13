@@ -73,11 +73,11 @@ if USE_MININET and MININET_AVAILABLE:
         print("❌ Failed to initialize Mininet: {}. Falling back to simulation mode.".format(e))
         topology = None
         link_param_manager = None
-        dtn_manager = DTNBundleManager(GROUND_STATIONS)
+        dtn_manager = DTNBundleManager(GROUND_STATIONS, mesh_connections=None)
         USE_MININET = False
 else:
     # Initialize standard DTN Bundle Manager (simulation mode)
-    dtn_manager = DTNBundleManager(GROUND_STATIONS)
+    dtn_manager = DTNBundleManager(GROUND_STATIONS, mesh_connections=None)
     print("📊 Using simulation mode (Mininet disabled)")
 
 # Pydantic models for API
@@ -377,8 +377,69 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 
                 # Case 2: This station can't see ISS
                 else:
+                    # Check if bundle has a route - if so, use it for forwarding
+                    next_hop_from_route = dtn_manager.get_next_hop_from_route(next_bundle_id)
+                    
+                    if next_hop_from_route:
+                        # Use route-based forwarding
+                        # Check if this is a retransmission
+                        retry_count = None
+                        if next_bundle_id in retransmission_map:
+                            retry_count, stored_data_rate = retransmission_map[next_bundle_id]
+                        elif next_bundle_id in dtn_manager.bundle_retry_counts:
+                            retry_count = dtn_manager.bundle_retry_counts[next_bundle_id]
+                        
+                        retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
+                        print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_from_route.upper()}{retry_msg} (route: {' → '.join(next_bundle.route)})")
+                        
+                        # Use ground link (fast, 100 Mbps)
+                        ground_link_bps = 100_000_000
+                        dtn_manager.start_transmission(
+                            next_bundle_id,
+                            station_id,
+                            next_hop_from_route,
+                            ground_link_bps,
+                            retransmission_count=retry_count
+                        )
+                        continue  # Don't check for other forwarding options
+                    
+                    # No route exists - calculate one if we have mesh connections
+                    # Find route to ISS (final destination)
+                    if not next_bundle.route or len(next_bundle.route) == 0:
+                        route = dtn_manager.find_route(
+                            station_id,
+                            "ISS",
+                            stations_data,
+                            visited=next_bundle.hops
+                        )
+                        if route:
+                            next_bundle.route = route
+                            print(f"🗺️  Calculated route for bundle {next_bundle_id[:8]}: {' → '.join(route)}")
+                            # Use first hop from route
+                            if len(route) > 1:
+                                next_hop_from_route = route[1]  # route[0] is current station
+                                
+                                retry_count = None
+                                if next_bundle_id in retransmission_map:
+                                    retry_count, stored_data_rate = retransmission_map[next_bundle_id]
+                                elif next_bundle_id in dtn_manager.bundle_retry_counts:
+                                    retry_count = dtn_manager.bundle_retry_counts[next_bundle_id]
+                                
+                                retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
+                                print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_from_route.upper()}{retry_msg} (route: {' → '.join(route)})")
+                                
+                                ground_link_bps = 100_000_000
+                                dtn_manager.start_transmission(
+                                    next_bundle_id,
+                                    station_id,
+                                    next_hop_from_route,
+                                    ground_link_bps,
+                                    retransmission_count=retry_count
+                                )
+                                continue
+                    
+                    # Fallback: Original forwarding logic (if no route found)
                     # First check: Is there a station that can see ISS RIGHT NOW?
-                    # Verify the active station actually has a valid link
                     active_station_has_link = False
                     if current_active_station:
                         active_station_data = next(
@@ -386,7 +447,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             None
                         )
                         if active_station_data and active_station_data["is_visible"]:
-                            # Check if active station has valid link budget
                             radial_velocity_data = tracker.calculate_radial_velocity(
                                 active_station_data["lat"],
                                 active_station_data["lon"]
@@ -404,9 +464,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     if current_active_station and current_active_station != station_id and active_station_has_link:
                         visited_stations = next_bundle.hops
                         
-                        # Only forward if we haven't already visited the active station
                         if current_active_station not in visited_stations:
-                            # Check if this is a retransmission
                             retry_count = None
                             if next_bundle_id in retransmission_map:
                                 retry_count, stored_data_rate = retransmission_map[next_bundle_id]
@@ -416,7 +474,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
                             print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to ACTIVE station {current_active_station.upper()}{retry_msg} for immediate ISS contact")
                             
-                            # Use ground link (fast, 100 Mbps)
                             ground_link_bps = 100_000_000
                             dtn_manager.start_transmission(
                                 next_bundle_id,
@@ -425,29 +482,26 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                 ground_link_bps,
                                 retransmission_count=retry_count
                             )
-                            continue  # Don't check for other forwarding options
+                            continue
                     
-                    # Second check: No active station, look for stations with upcoming passes
+                    # Second check: Look for stations with upcoming passes
                     current_station_next_pass = station_data["next_pass_minutes"]
                     
                     if current_station_next_pass > 0:
                         visited_stations = next_bundle.hops
                         
-                        # Find stations with SOONER passes than current station
                         better_stations = [
                             s for s in stations_data 
                             if s["id"] != station_id 
-                            and s["id"] not in visited_stations  # Avoid loops
-                            and s["next_pass_minutes"] > 0  # Has upcoming pass
-                            and s["next_pass_minutes"] < current_station_next_pass  # SOONER than us
+                            and s["id"] not in visited_stations
+                            and s["next_pass_minutes"] > 0
+                            and s["next_pass_minutes"] < current_station_next_pass
                         ]
                         
                         if better_stations:
-                            # Forward to station with soonest pass
                             better_stations.sort(key=lambda s: s["next_pass_minutes"])
                             next_hop_station = better_stations[0]["id"]
                             
-                            # Check if this is a retransmission
                             retry_count = None
                             if next_bundle_id in retransmission_map:
                                 retry_count, stored_data_rate = retransmission_map[next_bundle_id]
@@ -457,7 +511,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
                             print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_station.upper()}{retry_msg} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
                             
-                            # Use ground link (fast, 100 Mbps)
                             ground_link_bps = 100_000_000
                             dtn_manager.start_transmission(
                                 next_bundle_id,
@@ -596,6 +649,14 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             # Get custody ACKs
             pending_acks = dtn_manager.get_pending_acks()
             
+            # Get mesh topology connections (if using Mininet)
+            mesh_connections = []
+            if USE_MININET and topology:
+                mesh_connections = [
+                    {"from": conn[0], "to": conn[1]} 
+                    for conn in topology.get_mesh_connections()
+                ]
+            
             # Prepare data packet
             data = {
                 "type": "orbital_update",
@@ -613,7 +674,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "dtn_queues": dtn_queues,
                 "delivered_bundles": delivered_bundles,
                 "custody_acks": pending_acks,
-                "active_transmissions": active_transmissions
+                "active_transmissions": active_transmissions,
+                "mesh_connections": mesh_connections
             }
             
             await websocket.send_json(data)
