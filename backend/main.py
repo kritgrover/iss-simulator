@@ -158,6 +158,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
         iteration = 0
         current_active_station = None
         last_update_time = datetime.now(timezone.utc)
+        last_link_log_time = datetime.now(timezone.utc)  # Track when to log link updates
         
         while True:
             iteration += 1
@@ -329,8 +330,11 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 if not next_bundle:
                     continue  # Bundle doesn't exist (shouldn't happen)
                 
-                # Case 1: This station can see ISS - transmit directly
-                if is_visible:
+                # Check bundle destination first
+                bundle_destination = next_bundle.destination_station
+                
+                # Case 1: Bundle destination is ISS and this station can see ISS - transmit directly
+                if bundle_destination.upper() == "ISS" and is_visible:
                     # Calculate data rate for this specific station
                     radial_velocity_data = tracker.calculate_radial_velocity(
                         station_data["lat"],
@@ -374,9 +378,11 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             data_rate_bps,
                             retransmission_count=retry_count
                         )
+                        continue  # Skip forwarding logic, bundle is being sent to ISS
                 
-                # Case 2: This station can't see ISS
-                else:
+                # Case 2: Bundle destination is a ground station OR this station can't see ISS
+                # Forward to appropriate ground station
+                if bundle_destination.upper() != "ISS" or not is_visible:
                     # Check if bundle has a route - if so, use it for forwarding
                     next_hop_from_route = dtn_manager.get_next_hop_from_route(next_bundle_id)
                     
@@ -404,11 +410,13 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         continue  # Don't check for other forwarding options
                     
                     # No route exists - calculate one if we have mesh connections
-                    # Find route to ISS (final destination)
+                    # Find route to final destination (ISS or ground station)
                     if not next_bundle.route or len(next_bundle.route) == 0:
+                        # Determine final destination: use bundle destination if it's a ground station, otherwise ISS
+                        final_destination = bundle_destination if bundle_destination.upper() != "ISS" else "ISS"
                         route = dtn_manager.find_route(
                             station_id,
-                            "ISS",
+                            final_destination,
                             stations_data,
                             visited=next_bundle.hops
                         )
@@ -603,6 +611,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             
             # NEW: Calculate link budgets for ALL VISIBLE stations
             visible_links = []
+            # Check if we should log link updates (every 5 seconds)
+            should_log_link_updates = USE_MININET and topology and link_param_manager and (now - last_link_log_time).total_seconds() >= 5.0
+            
             for station_data in stations_data:
                 if station_data["is_visible"]:
                     radial_velocity_data = tracker.calculate_radial_velocity(
@@ -632,10 +643,16 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             station_data["id"],
                             mininet_params["bandwidth_mbps"],
                             mininet_params["delay_ms"],
-                            mininet_params["loss_percent"]
+                            mininet_params["loss_percent"],
+                            log_update=should_log_link_updates
                         )
-                # Note: We don't update links for non-visible stations to avoid spam
-                # Links will retain their last values or remain at initial state
+            
+            # Update log time after processing all stations (only once per iteration)
+            if should_log_link_updates:
+                last_link_log_time = now
+            
+            # Note: We don't update links for non-visible stations to avoid spam
+            # Links will retain their last values or remain at initial state
             
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()

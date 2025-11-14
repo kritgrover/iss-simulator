@@ -667,17 +667,61 @@ class NetworkDTNManager(DTNBundleManager):
                         completed.append((bundle_id, transmission.data_rate_bps))
                         del self.active_transmissions[bundle_id]
                     elif status['completed'] and not status['success']:
-                        # Network send failed - don't mark as complete
+                        # Network send failed - prepare for retransmission
                         # Failure reason already logged in send_bundle_over_network
                         failure_reason = status.get('failure_reason', 'unknown')
-                        if bundle_id not in self.active_transmissions:
-                            bundle = self.bundles.get(bundle_id)
-                            if bundle:
+                        bundle = self.bundles.get(bundle_id)
+                        transmission = self.active_transmissions.get(bundle_id)
+                        
+                        if bundle and transmission:
+                            # Increment retry count
+                            transmission.retransmission_count += 1
+                            retry_count = transmission.retransmission_count
+                            
+                            # Check if we can retry
+                            if transmission.can_retry():
+                                # Store retry count for retransmission
+                                self.bundle_retry_counts[bundle_id] = retry_count
+                                
+                                # Reset bundle status and prepare for retransmission
                                 bundle.status = BundleStatus.QUEUED
-                                print("⚠️  Bundle {} transmission failed ({}), requeuing for retry".format(
-                                    bundle_id[:8], failure_reason.replace('_', ' ') if failure_reason else 'unknown'
+                                bundle.forwarded_to = None
+                                
+                                # Remove from active transmissions so it can be picked up again
+                                del self.active_transmissions[bundle_id]
+                                
+                                # Remove from pending acknowledgments if present
+                                if bundle_id in self.pending_acknowledgments:
+                                    del self.pending_acknowledgments[bundle_id]
+                                
+                                print("⚠️  Bundle {} transmission failed ({}), requeuing for retry (attempt {}/{})".format(
+                                    bundle_id[:8], 
+                                    failure_reason.replace('_', ' ') if failure_reason else 'unknown',
+                                    retry_count + 1,
+                                    transmission.max_retries + 1
                                 ))
-                        # Keep in active_transmissions to prevent "complete" message
+                            else:
+                                # Max retries exceeded - mark as failed
+                                print("❌ Bundle {} FAILED - max retries exceeded ({}), marking as expired".format(
+                                    bundle_id[:8],
+                                    failure_reason.replace('_', ' ') if failure_reason else 'unknown'
+                                ))
+                                bundle.status = BundleStatus.EXPIRED
+                                bundle.forwarded_to = None
+                                
+                                # Remove from active transmissions
+                                del self.active_transmissions[bundle_id]
+                                
+                                # Remove from pending acknowledgments if present
+                                if bundle_id in self.pending_acknowledgments:
+                                    del self.pending_acknowledgments[bundle_id]
+                                
+                                # Mark as failed
+                                self._mark_bundle_failed(bundle_id, f"{failure_reason}_max_retries")
+                                
+                                # Remove from queue
+                                if bundle_id in self.station_queues.get(transmission.from_station, []):
+                                    self.station_queues[transmission.from_station].remove(bundle_id)
                     else:
                         # Network send still in progress - wait for it
                         # Don't mark as complete yet

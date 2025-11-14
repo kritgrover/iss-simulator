@@ -234,7 +234,7 @@ class ISSTopology:
         ))
     
     def update_iss_link(self, station_id: str, bandwidth_mbps: float,
-                       delay_ms: float, loss_percent: float):
+                       delay_ms: float, loss_percent: float, log_update: bool = True):
         """
         Update ISS link parameters using tc commands
         
@@ -243,6 +243,7 @@ class ISSTopology:
             bandwidth_mbps: New bandwidth in Mbps
             delay_ms: New delay in milliseconds
             loss_percent: New packet loss percentage
+            log_update: Whether to log the update (default: True)
         """
         if station_id not in self.iss_links:
             # Create link if it doesn't exist
@@ -259,9 +260,10 @@ class ISSTopology:
         # Apply link parameters using tc commands
         self._apply_link_parameters(station_id, bandwidth_mbps, delay_ms, loss_percent)
         
-        info("🔄 Updated ISS link to {}: {} Mbps, {} ms delay, {}% loss\n".format(
-            station_id, bandwidth_mbps, delay_ms, loss_percent
-        ))
+        if log_update:
+            info("🔄 Updated ISS link to {}: {} Mbps, {} ms delay, {}% loss\n".format(
+                station_id, bandwidth_mbps, delay_ms, loss_percent
+            ))
     
     def _apply_link_parameters(self, station_id: str, bandwidth_mbps: float,
                               delay_ms: float, loss_percent: float):
