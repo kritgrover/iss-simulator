@@ -149,7 +149,9 @@ class DTNBundleManager:
         self.active_transmissions: Dict[str, BundleTransmission] = {}
         self.pending_acknowledgments: Dict[str, PendingAcknowledgment] = {}  # Bundles waiting for ACK/NAK
         self.delivered_bundles: List[str] = []
+        self.failed_bundles: List[str] = []  # Track failed bundles (max retries exceeded, aborted, etc.)
         self.bundle_retry_counts: Dict[str, int] = {}  # Track retry counts for bundles
+        self.bundle_failure_reasons: Dict[str, str] = {}  # Track why bundles failed
         self.mesh_connections = mesh_connections or []  # List of (station1, station2) tuples
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
@@ -385,11 +387,27 @@ class DTNBundleManager:
             if not is_contact_maintained and transmission.to_station == "ISS":
                 # Contact lost! Abort transmission to ISS
                 elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
-                print(f"⚠️  Transmission of {bundle_id[:8]} ABORTED after {elapsed:.1f}s (contact lost)")
-                print(f"   Progress: {transmission.progress_percent():.1f}% ({transmission.bytes_transmitted:.0f}/{transmission.size_bytes} bytes)")
-                
                 bundle = self.bundles[bundle_id]
-                bundle.status = BundleStatus.QUEUED  # Back to queue
+                
+                # Increment retry count for this failed attempt
+                transmission.retransmission_count += 1
+                
+                # Check if we can retry
+                if transmission.can_retry():
+                    print(f"⚠️  Transmission of {bundle_id[:8]} ABORTED after {elapsed:.1f}s (contact lost)")
+                    print(f"   Progress: {transmission.progress_percent():.1f}% ({transmission.bytes_transmitted:.0f}/{transmission.size_bytes} bytes)")
+                    print(f"   Will retry when contact restored (attempt {transmission.retransmission_count}/{transmission.max_retries})")
+                    bundle.status = BundleStatus.QUEUED  # Back to queue
+                    # Store retry count for next attempt
+                    self.bundle_retry_counts[bundle_id] = transmission.retransmission_count
+                else:
+                    # Max retries exceeded - mark as failed
+                    print(f"❌ Transmission of {bundle_id[:8]} FAILED - max retries exceeded after contact loss")
+                    print(f"   Progress: {transmission.progress_percent():.1f}% ({transmission.bytes_transmitted:.0f}/{transmission.size_bytes} bytes)")
+                    print(f"   Total retry attempts: {transmission.retransmission_count}")
+                    bundle.status = BundleStatus.EXPIRED
+                    self._mark_bundle_failed(bundle_id, "contact_lost_max_retries")
+                
                 del self.active_transmissions[bundle_id]
                 continue
             
@@ -690,9 +708,11 @@ class DTNBundleManager:
             return True
         else:
             # Max retries exceeded
-            print(f"⚠️  Bundle {bundle_id[:8]} max retries exceeded - giving up")
+            print(f"❌ Bundle {bundle_id[:8]} FAILED - max retries exceeded (checksum mismatch)")
+            print(f"   Total retry attempts: {pending_ack.retransmission_count}")
             del self.pending_acknowledgments[bundle_id]
             bundle.status = BundleStatus.EXPIRED
+            self._mark_bundle_failed(bundle_id, "checksum_mismatch_max_retries")
             # Remove from queue
             if bundle_id in self.station_queues[to_station]:
                 self.station_queues[to_station].remove(bundle_id)
@@ -743,11 +763,13 @@ class DTNBundleManager:
                         pending_ack.transmitted_at = now  # Reset timeout
                 else:
                     # Max retries exceeded
-                    print(f"⚠️  Bundle {bundle_id[:8]} max retries exceeded - giving up")
+                    print(f"❌ Bundle {bundle_id[:8]} FAILED - max retries exceeded (ACK timeout)")
+                    print(f"   Total retry attempts: {pending_ack.retransmission_count}")
                     del self.pending_acknowledgments[bundle_id]
                     if bundle_id in self.bundles:
                         bundle = self.bundles[bundle_id]
                         bundle.status = BundleStatus.EXPIRED
+                        self._mark_bundle_failed(bundle_id, "ack_timeout_max_retries")
                         # Remove from queue
                         if bundle_id in self.station_queues[pending_ack.from_station]:
                             self.station_queues[pending_ack.from_station].remove(bundle_id)
@@ -760,6 +782,26 @@ class DTNBundleManager:
         for bundle_id in reversed(self.delivered_bundles):  # Most recent first
             if bundle_id in self.bundles:
                 bundles.append(self.bundles[bundle_id].to_dict())
+        return bundles
+    
+    def _mark_bundle_failed(self, bundle_id: str, reason: str) -> None:
+        """Mark a bundle as failed and track it"""
+        if bundle_id not in self.failed_bundles:
+            self.failed_bundles.append(bundle_id)
+            # Keep only last 50 failed bundles
+            if len(self.failed_bundles) > 50:
+                self.failed_bundles.pop(0)
+        self.bundle_failure_reasons[bundle_id] = reason
+    
+    def get_failed_bundles(self) -> List[Dict]:
+        """Get recently failed bundles for frontend"""
+        bundles = []
+        for bundle_id in reversed(self.failed_bundles):  # Most recent first
+            if bundle_id in self.bundles:
+                bundle_dict = self.bundles[bundle_id].to_dict()
+                # Add failure reason
+                bundle_dict["failure_reason"] = self.bundle_failure_reasons.get(bundle_id, "unknown")
+                bundles.append(bundle_dict)
         return bundles
     
     def get_pending_acks(self) -> List[Dict]:
@@ -836,4 +878,7 @@ class DTNBundleManager:
                 for queue in self.station_queues.values():
                     if bundle_id in queue:
                         queue.remove(bundle_id)
-                print(f"⏰ Bundle {bundle_id[:8]} expired (TTL exceeded)")
+                # Mark as failed if not already tracked
+                if bundle_id not in self.failed_bundles:
+                    self._mark_bundle_failed(bundle_id, "ttl_exceeded")
+                print(f"❌ Bundle {bundle_id[:8]} FAILED - expired (TTL exceeded)")
