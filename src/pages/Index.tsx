@@ -9,6 +9,7 @@ import StationNetwork from "@/components/dashboard/StationNetwork";
 import LinkBudgetChart from "@/components/analytics/LinkBudgetChart";
 import TrafficFlowMonitor from "@/components/analytics/TrafficFlowMonitor";
 import TransmissionMonitor from "@/components/dashboard/TransmissionMonitor";
+import NetworkTopology from "@/components/dashboard/NetworkTopology";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useState, useEffect } from "react";
 import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
@@ -134,6 +135,13 @@ const Index = () => {
           {/* Right Panel - Analytics & Orbital Parameters */}
           <ResizablePanel defaultSize={30} minSize={20}>
             <div className="h-full p-4 space-y-4 overflow-y-auto">
+              <NetworkTopology
+                stations={stations}
+                meshConnections={orbitalData?.mesh_connections ?? []}
+                activeTransmissions={orbitalData?.active_transmissions ?? []}
+                dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
+                activeStationId={orbitalData?.active_station_id}
+              />
               <OrbitalParameters orbitalData={orbitalData} />
               <LinkBudgetChart 
                 linkBudgetHistory={orbitalData?.link_budget_history ?? []}
