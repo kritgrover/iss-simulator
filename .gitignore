@@ -39,4 +39,5 @@ backend/data/
 
 # Runtime cache
 iss_tle_cache.txt
-
+__pycache__/
+*.py[cod]
