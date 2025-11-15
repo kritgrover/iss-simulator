@@ -90,7 +90,111 @@ const NetworkTopology = ({
     const newLinkStates = new Map<string, LinkStateData>();
     const now = Date.now();
 
-    // Process active transmissions
+    // Process all bundles to track their routes
+    const allBundles = Object.values(dtnQueues).flat();
+    
+    // Track bundles that reached last ground station - need to reset their previous links
+    const bundlesAtLastStation = new Set<string>();
+
+    allBundles.forEach((bundle) => {
+      const route = bundle.route || bundle.hops || [];
+      if (route.length < 2) return;
+
+      const currentCustodian = bundle.current_custodian?.toLowerCase();
+      const currentIndex = route.findIndex((r) => r.toLowerCase() === currentCustodian);
+      const isLastStation = currentIndex >= 0 && currentIndex === route.length - 2;
+      const isDelivered = bundle.status === 'DELIVERED';
+
+      // Check if bundle is at last ground station
+      if (isLastStation && !isDelivered) {
+        bundlesAtLastStation.add(bundle.bundle_id);
+      }
+
+      // Find active transmission for this bundle
+      const activeTransmission = activeTransmissions.find((t) => t.bundle_id === bundle.bundle_id);
+
+      if (isLastStation && !isDelivered) {
+        // Bundle at last ground station - reset all previous links, only show ISS link
+        const lastGroundStation = route[route.length - 2]?.toLowerCase();
+        const issLinkKey = `${lastGroundStation}-iss`;
+
+        if (activeTransmission && activeTransmission.to_station.toLowerCase() === 'iss') {
+          // Currently transmitting to ISS
+          newLinkStates.set(issLinkKey, {
+            state: 'transmitting_iss',
+            bundleId: bundle.bundle_id,
+            timestamp: now,
+          });
+        } else {
+          // Waiting for ISS contact
+          newLinkStates.set(issLinkKey, {
+            state: 'waiting_iss',
+            bundleId: bundle.bundle_id,
+            timestamp: now,
+          });
+        }
+      } else if (isDelivered) {
+        // Bundle delivered - mark ISS link as complete
+        if (route.length >= 2) {
+          const lastGroundStation = route[route.length - 2]?.toLowerCase();
+          const issLinkKey = `${lastGroundStation}-iss`;
+          newLinkStates.set(issLinkKey, {
+            state: 'all_complete',
+            bundleId: bundle.bundle_id,
+            timestamp: now,
+          });
+        }
+      } else if (activeTransmission) {
+        // Active transmission - highlight current link and all previous links in route
+        const from = activeTransmission.from_station.toLowerCase();
+        const to = activeTransmission.to_station.toLowerCase();
+        const currentLinkKey = `${from}-${to}`;
+        const isIssLink = to === 'iss' || from === 'iss';
+
+        // Highlight current transmitting link
+        newLinkStates.set(currentLinkKey, {
+          state: isIssLink ? 'transmitting_iss' : 'transmitting',
+          bundleId: bundle.bundle_id,
+          timestamp: now,
+        });
+
+        // Highlight all previous links in the route as completed (green)
+        if (currentIndex > 0) {
+          for (let i = 0; i < currentIndex; i++) {
+            const prevFrom = route[i]?.toLowerCase();
+            const prevTo = route[i + 1]?.toLowerCase();
+            if (prevFrom && prevTo) {
+              const prevLinkKey = `${prevFrom}-${prevTo}`;
+              const existingState = newLinkStates.get(prevLinkKey);
+              // Only mark as completed if not already marked as transmitting or waiting
+              if (!existingState || existingState.state === 'completed' || existingState.state === 'all_complete') {
+                newLinkStates.set(prevLinkKey, {
+                  state: 'completed',
+                  bundleId: bundle.bundle_id,
+                  timestamp: now,
+                });
+              }
+            }
+          }
+        }
+      } else if (currentIndex > 0) {
+        // Bundle is queued but has a route - highlight completed links
+        for (let i = 0; i < currentIndex; i++) {
+          const prevFrom = route[i]?.toLowerCase();
+          const prevTo = route[i + 1]?.toLowerCase();
+          if (prevFrom && prevTo) {
+            const prevLinkKey = `${prevFrom}-${prevTo}`;
+            newLinkStates.set(prevLinkKey, {
+              state: 'completed',
+              bundleId: bundle.bundle_id,
+              timestamp: now,
+            });
+          }
+        }
+      }
+    });
+
+    // Process active transmissions (for bundles not yet in queues or to override states)
     activeTransmissions.forEach((transmission) => {
       const from = transmission.from_station.toLowerCase();
       const to = transmission.to_station.toLowerCase();
@@ -98,187 +202,80 @@ const NetworkTopology = ({
       const isIssLink = to === 'iss' || from === 'iss';
 
       // Get bundle to check route and status
-      const bundle = Object.values(dtnQueues)
-        .flat()
-        .find((b) => b.bundle_id === transmission.bundle_id);
+      const bundle = allBundles.find((b) => b.bundle_id === transmission.bundle_id);
 
       if (bundle) {
         const route = bundle.route || bundle.hops || [];
-        const isDelivered = bundle.status === 'DELIVERED';
+        const currentCustodian = bundle.current_custodian?.toLowerCase();
+        const currentIndex = route.findIndex((r) => r.toLowerCase() === currentCustodian);
+        const isLastStation = currentIndex >= 0 && currentIndex === route.length - 2;
 
-        // Check if this is the last ground station before ISS
-        if (isIssLink && route.length >= 2) {
-          const lastGroundStation = route[route.length - 2]?.toLowerCase();
-          const isLastStation = from === lastGroundStation;
+        if (isLastStation && bundle.status !== 'DELIVERED') {
+          // Already handled above
+          return;
+        }
 
-          if (isDelivered) {
-            // All bundles delivered to ISS
-            newLinkStates.set(linkKey, {
-              state: 'all_complete',
-              bundleId: transmission.bundle_id,
-              timestamp: now,
-            });
-          } else if (isLastStation && !activeTransmissions.some((t) => t.bundle_id === transmission.bundle_id && t.to_station.toLowerCase() === 'iss')) {
-            // Bundle at last ground station, waiting for ISS contact
-            newLinkStates.set(linkKey, {
-              state: 'waiting_iss',
-              bundleId: transmission.bundle_id,
-              timestamp: now,
-            });
-          } else {
-            // Transmitting to ISS
-            newLinkStates.set(linkKey, {
-              state: 'transmitting_iss',
-              bundleId: transmission.bundle_id,
-              timestamp: now,
-            });
-          }
-        } else if (isIssLink) {
-          // ISS link but route not fully established yet
+        // Highlight current link (override if needed)
+        const existingState = newLinkStates.get(linkKey);
+        if (!existingState || existingState.state === 'completed' || existingState.state === 'all_complete') {
           newLinkStates.set(linkKey, {
-            state: 'transmitting_iss',
-            bundleId: transmission.bundle_id,
-            timestamp: now,
-          });
-        } else {
-          // Regular ground-to-ground transmission
-          newLinkStates.set(linkKey, {
-            state: 'transmitting',
+            state: isIssLink ? 'transmitting_iss' : 'transmitting',
             bundleId: transmission.bundle_id,
             timestamp: now,
           });
         }
+
+        // Highlight previous links in route as completed
+        if (currentIndex > 0) {
+          for (let i = 0; i < currentIndex; i++) {
+            const prevFrom = route[i]?.toLowerCase();
+            const prevTo = route[i + 1]?.toLowerCase();
+            if (prevFrom && prevTo) {
+              const prevLinkKey = `${prevFrom}-${prevTo}`;
+              const prevExistingState = newLinkStates.get(prevLinkKey);
+              if (!prevExistingState || prevExistingState.state === 'completed' || prevExistingState.state === 'all_complete') {
+                newLinkStates.set(prevLinkKey, {
+                  state: 'completed',
+                  bundleId: transmission.bundle_id,
+                  timestamp: now,
+                });
+              }
+            }
+          }
+        }
       } else {
         // No bundle info, use default transmission state
-        newLinkStates.set(linkKey, {
-          state: isIssLink ? 'transmitting_iss' : 'transmitting',
-          bundleId: transmission.bundle_id,
-          timestamp: now,
-        });
+        if (!newLinkStates.has(linkKey)) {
+          newLinkStates.set(linkKey, {
+            state: isIssLink ? 'transmitting_iss' : 'transmitting',
+            bundleId: transmission.bundle_id,
+            timestamp: now,
+          });
+        }
       }
     });
 
-    // Handle completed transmissions - mark as green and find next link in route
+    // Handle completed transmissions - mark completed link as green
     newCompleted.forEach((bundleId) => {
-      // Find the completed link
+      // Find the completed link from previous state
       previousLinkStatesRef.current.forEach((state, linkKey) => {
         if (state.bundleId === bundleId && (state.state === 'transmitting' || state.state === 'transmitting_iss')) {
-          // Find bundle to get route
-          const bundle = Object.values(dtnQueues)
-            .flat()
-            .find((b) => b.bundle_id === bundleId);
-
-          if (bundle) {
-            const route = bundle.route || bundle.hops || [];
-            const currentCustodian = bundle.current_custodian?.toLowerCase();
-            const currentIndex = route.findIndex((r) => r.toLowerCase() === currentCustodian);
-
-            // Check if this is the last ground station before ISS
-            const isLastStation = currentIndex >= 0 && currentIndex === route.length - 2;
-
-            if (isLastStation) {
-              // Bundle reached last ground station - reset all previous links for this bundle
-              // and only show the ISS link
-              previousLinkStatesRef.current.forEach((prevState, prevLinkKey) => {
-                if (prevState.bundleId === bundleId && prevLinkKey !== linkKey) {
-                  // Reset previous links (don't add them to newLinkStates)
-                  // They will return to default state
-                }
-              });
-
-              // Mark completed link as green (briefly)
-              newLinkStates.set(linkKey, {
-                state: 'completed',
-                bundleId,
-                timestamp: now,
-              });
-
-              // Set ISS link to waiting state
-              const issLinkKey = `${currentCustodian}-iss`;
-              newLinkStates.set(issLinkKey, {
-                state: 'waiting_iss',
-                bundleId,
-                timestamp: now,
-              });
-            } else {
-              // Regular completion - mark as green and highlight next link
-              newLinkStates.set(linkKey, {
-                state: 'completed',
-                bundleId,
-                timestamp: now,
-              });
-
-              // Find next hop in route
-              if (currentIndex >= 0 && currentIndex < route.length - 1) {
-                const nextHop = route[currentIndex + 1]?.toLowerCase();
-                const nextLinkKey = `${currentCustodian}-${nextHop}`;
-
-                // Check if there's an active transmission for this bundle on the next link
-                const nextTransmission = activeTransmissions.find(
-                  (t) =>
-                    t.bundle_id === bundleId &&
-                    t.from_station.toLowerCase() === currentCustodian &&
-                    t.to_station.toLowerCase() === nextHop
-                );
-
-                if (nextTransmission) {
-                  // Next link is already active, it will be handled above
-                } else if (nextHop === 'iss') {
-                  // Next hop is ISS - check if bundle is at last ground station
-                  const isNextLastStation = currentIndex === route.length - 2;
-                  if (isNextLastStation) {
-                    newLinkStates.set(nextLinkKey, {
-                      state: 'waiting_iss',
-                      bundleId,
-                      timestamp: now,
-                    });
-                  }
-                }
-              }
-            }
-          } else {
-            // No bundle info - just mark as completed
-            newLinkStates.set(linkKey, {
-              state: 'completed',
-              bundleId,
-              timestamp: now,
-            });
-          }
+          // Mark as completed (green)
+          newLinkStates.set(linkKey, {
+            state: 'completed',
+            bundleId,
+            timestamp: now,
+          });
         }
       });
     });
 
-    // Check for bundles at last ground station waiting for ISS or delivered
-    Object.values(dtnQueues).forEach((queue) => {
-      queue.forEach((bundle) => {
-        const route = bundle.route || bundle.hops || [];
-        if (route.length >= 2 && route[route.length - 1]?.toLowerCase() === 'iss') {
-          const lastGroundStation = route[route.length - 2]?.toLowerCase();
-          const currentCustodian = bundle.current_custodian?.toLowerCase();
-          const linkKey = `${lastGroundStation}-iss`;
-
-          if (bundle.status === 'DELIVERED') {
-            // Bundle delivered to ISS - mark as all complete
-            if (!newLinkStates.has(linkKey)) {
-              newLinkStates.set(linkKey, {
-                state: 'all_complete',
-                bundleId: bundle.bundle_id,
-                timestamp: now,
-              });
-            }
-          } else if (
-            currentCustodian === lastGroundStation &&
-            !activeTransmissions.some((t) => t.bundle_id === bundle.bundle_id)
-          ) {
-            // Bundle is at last ground station and not actively transmitting - waiting for ISS
-            if (!newLinkStates.has(linkKey)) {
-              newLinkStates.set(linkKey, {
-                state: 'waiting_iss',
-                bundleId: bundle.bundle_id,
-                timestamp: now,
-              });
-            }
-          }
+    // Reset previous links for bundles that reached last ground station
+    bundlesAtLastStation.forEach((bundleId) => {
+      previousLinkStatesRef.current.forEach((prevState, prevLinkKey) => {
+        // Remove all previous link states for this bundle (except ISS link which is already set above)
+        if (prevState.bundleId === bundleId && !prevLinkKey.includes('-iss')) {
+          // Don't add to newLinkStates - this resets the link to default
         }
       });
     });
@@ -286,6 +283,12 @@ const NetworkTopology = ({
     // Clean up old completed states after 2 seconds
     previousLinkStatesRef.current.forEach((state, linkKey) => {
       const age = now - state.timestamp;
+      
+      // Skip if this is a bundle at last station (already handled above)
+      if (bundlesAtLastStation.has(state.bundleId) && !linkKey.includes('-iss')) {
+        return;
+      }
+      
       if ((state.state === 'completed' || state.state === 'all_complete') && age > 2000) {
         // Remove after 2 seconds - don't add to newLinkStates
         return;
@@ -369,6 +372,7 @@ const NetworkTopology = ({
   // Render edges (links)
   const renderEdges = () => {
     const edges: JSX.Element[] = [];
+    const renderedLinks = new Set<string>();
 
     // Render mesh connections
     meshConnections.forEach((conn) => {
@@ -392,16 +396,25 @@ const NetworkTopology = ({
           opacity={color === 'transparent' ? 0 : 0.6}
         />
       );
+      renderedLinks.add(linkKey);
     });
 
-    // Render ISS links (from active station to ISS)
-    if (activeStationId) {
-      const stationPos = nodePositions.get(activeStationId.toLowerCase());
-      const issPos = nodePositions.get('iss');
-      if (stationPos && issPos) {
-        const linkKey = `${activeStationId.toLowerCase()}-iss`;
+    // Render ISS links from ALL stations
+    const issPos = nodePositions.get('iss');
+    if (issPos) {
+      stations.forEach((station) => {
+        const stationPos = nodePositions.get(station.id);
+        if (!stationPos) return;
+
+        const linkKey = `${station.id.toLowerCase()}-iss`;
         const color = getLinkColor(linkKey);
         const width = getLinkWidth(linkKey);
+        const state = linkStates.get(linkKey);
+        
+        // Higher opacity for active links, lower for idle
+        const opacity = state && state.state !== 'default' 
+          ? (color === 'transparent' ? 0 : 0.6)
+          : (color === 'transparent' ? 0 : 0.2);
 
         edges.push(
           <line
@@ -412,46 +425,12 @@ const NetworkTopology = ({
             y2={issPos.y}
             stroke={color}
             strokeWidth={width}
-            opacity={color === 'transparent' ? 0 : 0.6}
+            opacity={opacity}
           />
         );
-      }
+        renderedLinks.add(linkKey);
+      });
     }
-
-    // Also render ISS links from active transmissions
-    activeTransmissions.forEach((transmission) => {
-      const from = transmission.from_station.toLowerCase();
-      const to = transmission.to_station.toLowerCase();
-      if (to === 'iss' || from === 'iss') {
-        const fromPos = nodePositions.get(from);
-        const toPos = nodePositions.get(to === 'iss' ? 'iss' : from);
-        const issPos = nodePositions.get('iss');
-        const otherPos = to === 'iss' ? fromPos : toPos;
-
-        if (fromPos && issPos && otherPos) {
-          const linkKey = `${from}-iss`;
-          const color = getLinkColor(linkKey);
-          const width = getLinkWidth(linkKey);
-
-          // Check if this edge already exists
-          const exists = edges.some((edge) => edge.key === linkKey);
-          if (!exists) {
-            edges.push(
-              <line
-                key={linkKey}
-                x1={otherPos.x}
-                y1={otherPos.y}
-                x2={issPos.x}
-                y2={issPos.y}
-                stroke={color}
-                strokeWidth={width}
-                opacity={color === 'transparent' ? 0 : 0.6}
-              />
-            );
-          }
-        }
-      }
-    });
 
     return edges;
   };
