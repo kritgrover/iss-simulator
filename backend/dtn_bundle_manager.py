@@ -42,10 +42,13 @@ class DTNBundle:
     
     def is_expired(self) -> bool:
         """Check if bundle has exceeded TTL"""
-        age = datetime.now(timezone.utc) - self.created_at
+        now_utc = datetime.now(timezone.utc)
+        created = self.created_at if self.created_at.tzinfo else self.created_at.replace(tzinfo=timezone.utc)
+        age = now_utc - created
         return age > timedelta(hours=self.ttl_hours)
     
     def to_dict(self) -> Dict:
+        created = self.created_at if self.created_at.tzinfo else self.created_at.replace(tzinfo=timezone.utc)
         return {
             "bundle_id": self.bundle_id,
             "bundle_id_short": self.bundle_id[:8],
@@ -54,13 +57,13 @@ class DTNBundle:
             "payload": self.payload,
             "priority": self.priority.value,
             "status": self.status.value,
-            "created_at": self.created_at.isoformat(),
+            "created_at": created.isoformat(),
             "ttl_hours": self.ttl_hours,
             "current_custodian": self.current_custodian,
             "forwarded_to": self.forwarded_to,
-            "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
+            "delivered_at": (self.delivered_at if (self.delivered_at and self.delivered_at.tzinfo) else (self.delivered_at.replace(tzinfo=timezone.utc) if self.delivered_at else None)).isoformat() if self.delivered_at else None,
             "hops": self.hops,
-            "age_seconds": (datetime.now(timezone.utc) - self.created_at).total_seconds(),
+            "age_seconds": (datetime.now(timezone.utc) - created).total_seconds(),
             "size_bytes": self.size_bytes  # NEW
         }
 
@@ -562,12 +565,12 @@ class DTNBundleManager:
                         destination_station=row.destination_station,
                         payload=row.payload,
                         priority=BundlePriority(row.priority),
-                        created_at=row.created_at,
+                        created_at=(row.created_at if (row.created_at and row.created_at.tzinfo) else (row.created_at.replace(tzinfo=timezone.utc) if row.created_at else datetime.now(timezone.utc))),
                         ttl_hours=row.ttl_hours,
                         status=BundleStatus(row.status),
                         current_custodian=row.current_custodian,
                         forwarded_to=row.forwarded_to,
-                        delivered_at=row.delivered_at,
+                        delivered_at=(row.delivered_at if (row.delivered_at and row.delivered_at.tzinfo) else (row.delivered_at.replace(tzinfo=timezone.utc) if row.delivered_at else None)),
                         hops=hops,
                         size_bytes=row.size_bytes,
                     )
