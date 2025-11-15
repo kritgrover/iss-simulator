@@ -493,41 +493,45 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             continue
                     
                     # Second check: Look for stations with upcoming passes
-                    current_station_next_pass = station_data["next_pass_minutes"]
-                    
-                    if current_station_next_pass > 0:
-                        visited_stations = next_bundle.hops
+                    # Only do this if current station is NOT currently tracking ISS
+                    # (if it is tracking, next_pass_minutes refers to the NEXT pass after current one ends)
+                    if not is_visible:
+                        current_station_next_pass = station_data["next_pass_minutes"]
                         
-                        better_stations = [
-                            s for s in stations_data 
-                            if s["id"] != station_id 
-                            and s["id"] not in visited_stations
-                            and s["next_pass_minutes"] > 0
-                            and s["next_pass_minutes"] < current_station_next_pass
-                        ]
-                        
-                        if better_stations:
-                            better_stations.sort(key=lambda s: s["next_pass_minutes"])
-                            next_hop_station = better_stations[0]["id"]
+                        if current_station_next_pass > 0:
+                            visited_stations = next_bundle.hops
                             
-                            retry_count = None
-                            if next_bundle_id in retransmission_map:
-                                retry_count, stored_data_rate = retransmission_map[next_bundle_id]
-                            elif next_bundle_id in dtn_manager.bundle_retry_counts:
-                                retry_count = dtn_manager.bundle_retry_counts[next_bundle_id]
+                            better_stations = [
+                                s for s in stations_data 
+                                if s["id"] != station_id 
+                                and s["id"] not in visited_stations
+                                and s["next_pass_minutes"] > 0
+                                and s["next_pass_minutes"] < current_station_next_pass
+                            ]
                             
-                            retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
-                            print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_station.upper()}{retry_msg} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
-                            
-                            ground_link_bps = 100_000_000
-                            dtn_manager.start_transmission(
-                                next_bundle_id,
-                                station_id,
-                                next_hop_station,
-                                ground_link_bps,
-                                retransmission_count=retry_count
-                            )
-                        # else: No better option - keep bundle here and wait for our own pass
+                            if better_stations:
+                                better_stations.sort(key=lambda s: s["next_pass_minutes"])
+                                next_hop_station = better_stations[0]["id"]
+                                
+                                retry_count = None
+                                if next_bundle_id in retransmission_map:
+                                    retry_count, stored_data_rate = retransmission_map[next_bundle_id]
+                                elif next_bundle_id in dtn_manager.bundle_retry_counts:
+                                    retry_count = dtn_manager.bundle_retry_counts[next_bundle_id]
+                                
+                                retry_msg = f" (retry {retry_count + 1})" if retry_count and retry_count > 0 else ""
+                                print(f"📨 {station_id.upper()} forwarding {next_bundle.priority.value} priority bundle to {next_hop_station.upper()}{retry_msg} (sooner pass: {better_stations[0]['next_pass_minutes']} min vs {current_station_next_pass} min)")
+                                
+                                ground_link_bps = 100_000_000
+                                dtn_manager.start_transmission(
+                                    next_bundle_id,
+                                    station_id,
+                                    next_hop_station,
+                                    ground_link_bps,
+                                    retransmission_count=retry_count
+                                )
+                                continue
+                    # else: Current station is tracking ISS or no better option - keep bundle here and wait
             
             # Cleanup expired bundles every 60 seconds
             if iteration % 60 == 0:

@@ -502,8 +502,6 @@ class NetworkDTNManager(DTNBundleManager):
                 return False
             
             # If we can't determine from output, check if command completed
-            # (cmd() will raise exception if command fails badly)
-            # Default to failure if output is suspicious
             if not result or len(result.strip()) == 0:
                 failure_category = 'bundle_lost'
                 print("❌ Transmission FAILED for bundle {}: {}".format(bundle_id[:8], failure_category.upper().replace('_', ' ')))

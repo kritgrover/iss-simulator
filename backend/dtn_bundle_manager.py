@@ -197,19 +197,37 @@ class DTNBundleManager:
         # Otherwise, route to the specified station
         target_station = to_station
         if to_station == "ISS":
-            # Find stations that can see ISS (have upcoming passes)
+            # Find stations that can see ISS
             station_lookup = {s["id"]: s for s in stations_data}
-            visible_stations = [
+            
+            # First priority: stations currently tracking ISS (is_visible = True)
+            currently_visible = [
                 sid for sid in self.stations.keys() 
                 if sid != from_station and 
                 sid not in visited and
-                station_lookup.get(sid, {}).get("next_pass_minutes", 999999) > 0
+                station_lookup.get(sid, {}).get("is_visible", False)
             ]
-            if not visible_stations:
-                return None  # No station can see ISS
-            # Prefer stations with sooner passes
-            visible_stations.sort(key=lambda sid: station_lookup.get(sid, {}).get("next_pass_minutes", 999999))
-            target_station = visible_stations[0]  # Route to station with soonest pass
+            
+            if currently_visible:
+                # If multiple stations are visible, prefer the one with highest elevation
+                currently_visible.sort(
+                    key=lambda sid: station_lookup.get(sid, {}).get("look_angles", {}).get("elevation", -999),
+                    reverse=True
+                )
+                target_station = currently_visible[0]
+            else:
+                # Fallback: stations with upcoming passes
+                upcoming_pass_stations = [
+                    sid for sid in self.stations.keys() 
+                    if sid != from_station and 
+                    sid not in visited and
+                    station_lookup.get(sid, {}).get("next_pass_minutes", 999999) > 0
+                ]
+                if not upcoming_pass_stations:
+                    return None  # No station can see ISS
+                # Prefer stations with sooner passes
+                upcoming_pass_stations.sort(key=lambda sid: station_lookup.get(sid, {}).get("next_pass_minutes", 999999))
+                target_station = upcoming_pass_stations[0]  # Route to station with soonest pass
         
         # BFS to find route
         from collections import deque
@@ -672,9 +690,9 @@ class DTNBundleManager:
             print(f"⚠️  NAK for {bundle_id[:8]} received but we're not the sender")
             return False
         
-        # Check if we have pending acknowledgment for this bundle
         if bundle_id not in self.pending_acknowledgments:
-            print(f"⚠️  NAK for {bundle_id[:8]} but no pending acknowledgment found")
+            # This can happen when NAK arrives but retry was already handled via direct failure path
+            print(f"⚠️  NAK for {bundle_id[:8]} but no pending acknowledgment found - retry already handled")
             return False
         
         pending_ack = self.pending_acknowledgments[bundle_id]
