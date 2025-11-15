@@ -118,6 +118,10 @@ export interface OrbitalData {
   custody_acks: CustodyAck[];
   delivered_bundles: DTNBundle[];
   active_transmissions: ActiveTransmission[];
+  mesh_connections?: Array<{
+    from: string;
+    to: string;
+  }>;
 }
 
 export const useOrbitalTracking = () => {
