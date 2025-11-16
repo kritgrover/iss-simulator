@@ -142,25 +142,36 @@ const GlobeView = ({
           />
         </div>
 
-        {/* Legend and Controls Info */}
-        <div className="absolute top-4 left-4 space-y-2 z-10">
-          <div className="bg-black/70 backdrop-blur-sm px-3 py-2 rounded-lg border border-border/50 space-y-2">
+        {/* Legend and Controls Info - Glassmorphism */}
+        <div className="absolute top-4 left-4 space-y-2 z-10 animate-in fade-in duration-500">
+          <div
+            className="px-3 py-2 rounded-lg space-y-2 transition-all duration-300 hover:scale-105"
+            style={{
+              background: 'rgba(0, 0, 0, 0.3)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+            }}
+          >
             <div className="text-[10px] text-secondary/80 mb-2">
               🖱️ Click + Drag to rotate • Scroll to zoom
             </div>
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <div className="w-3 h-3 rounded-full bg-blue-500" />
+            <div className="flex items-center gap-2 text-xs font-mono transition-transform hover:translate-x-1">
+              <div className="w-3 h-3 rounded-full bg-blue-500 shadow-lg shadow-blue-500/50" />
               <span className="text-secondary">Earth</span>
             </div>
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <div className="w-3 h-3 rounded-full bg-green-500" />
+            <div className="flex items-center gap-2 text-xs font-mono transition-transform hover:translate-x-1">
+              <div className="w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/50 animate-pulse" />
               <span className="text-secondary">ISS</span>
             </div>
             {activeStation && (
-              <div className="flex items-center gap-2 text-xs font-mono">
+              <div className="flex items-center gap-2 text-xs font-mono transition-transform hover:translate-x-1">
                 <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: activeStation.color }}
+                  className="w-3 h-3 rounded-full animate-pulse"
+                  style={{
+                    backgroundColor: activeStation.color,
+                    boxShadow: `0 0 10px ${activeStation.color}80`
+                  }}
                 />
                 <span className="text-secondary">{activeStation.name}</span>
               </div>
@@ -168,59 +179,78 @@ const GlobeView = ({
           </div>
         </div>
 
-        {/* Data Panels */}
-        <div className="absolute bottom-4 left-4 right-4 flex gap-4">
+        {/* Data Panels - Glassmorphism */}
+        <div className="absolute bottom-4 left-4 right-4 flex gap-4 animate-in slide-in-from-bottom duration-500">
           {/* ISS Data */}
-          <div className="flex-1 bg-black/80 backdrop-blur-sm border border-border rounded-lg p-3">
+          <div
+            className="flex-1 rounded-lg p-3 transition-all duration-300 hover:scale-105"
+            style={{
+              background: 'rgba(0, 255, 0, 0.05)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(0, 255, 0, 0.2)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(0, 255, 0, 0.1), 0 0 20px rgba(0, 255, 0, 0.1)',
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
-              <Satellite className="w-4 h-4 text-success" />
-              <span className="text-xs font-semibold text-secondary uppercase tracking-wide">
+              <Satellite className="w-4 h-4 text-success animate-pulse" />
+              <span className="text-xs font-semibold text-success uppercase tracking-wide">
                 ISS Position
               </span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <div className="text-xs font-mono">
+              <div className="text-xs font-mono transition-all hover:translate-x-1">
                 <span className="text-secondary">LAT:</span>{' '}
-                <span className="text-success">{issLat.toFixed(4)}°</span>
+                <span className="text-success font-semibold">{issLat.toFixed(4)}°</span>
               </div>
-              <div className="text-xs font-mono">
+              <div className="text-xs font-mono transition-all hover:translate-x-1">
                 <span className="text-secondary">LON:</span>{' '}
-                <span className="text-success">{issLon.toFixed(4)}°</span>
+                <span className="text-success font-semibold">{issLon.toFixed(4)}°</span>
               </div>
-              <div className="text-xs font-mono">
+              <div className="text-xs font-mono transition-all hover:translate-x-1">
                 <span className="text-secondary">ALT:</span>{' '}
-                <span className="text-primary">{issAlt.toFixed(1)} km</span>
+                <span className="text-primary font-semibold">{issAlt.toFixed(1)} km</span>
               </div>
-              <div className="text-xs font-mono">
+              <div className="text-xs font-mono transition-all hover:translate-x-1">
                 <span className="text-secondary">VEL:</span>{' '}
-                <span className="text-primary">{issVelocity.toFixed(2)} km/s</span>
+                <span className="text-primary font-semibold">{issVelocity.toFixed(2)} km/s</span>
               </div>
             </div>
           </div>
 
           {/* Ground Station Status */}
           {activeStation && activeStationData && (
-            <div className="flex-1 bg-black/80 backdrop-blur-sm border border-border rounded-lg p-3">
+            <div
+              className="flex-1 rounded-lg p-3 transition-all duration-300 hover:scale-105"
+              style={{
+                background: `${activeStation.color}10`,
+                backdropFilter: 'blur(16px)',
+                border: `1px solid ${activeStation.color}40`,
+                boxShadow: `0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 ${activeStation.color}20, 0 0 20px ${activeStation.color}20`,
+              }}
+            >
               <div className="flex items-center gap-2 mb-2">
-                <div 
-                  className="w-3 h-3 rounded-full animate-pulse" 
-                  style={{ backgroundColor: activeStation.color }}
+                <div
+                  className="w-3 h-3 rounded-full animate-pulse"
+                  style={{
+                    backgroundColor: activeStation.color,
+                    boxShadow: `0 0 10px ${activeStation.color}`
+                  }}
                 />
-                <span className="text-xs font-semibold text-secondary uppercase tracking-wide">
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: activeStation.color }}>
                   {activeStation.name}
                 </span>
               </div>
               <div className="space-y-1">
-                <div className="text-xs font-mono">
+                <div className="text-xs font-mono transition-all hover:translate-x-1">
                   <span className="text-secondary">STATUS:</span>{' '}
-                  <span className={issInCone ? 'text-success' : 'text-secondary'}>
+                  <span className={issInCone ? 'text-success font-semibold' : 'text-secondary'}>
                     {issInCone ? '🔗 TRACKING' : '⏳ WAITING'}
                   </span>
                 </div>
                 {issInCone ? (
-                  <div className="text-xs font-mono">
+                  <div className="text-xs font-mono transition-all hover:translate-x-1">
                     <span className="text-secondary">ELEV:</span>{' '}
-                    <span className="text-primary">{activeStationData.look_angles.elevation.toFixed(1)}°</span>
+                    <span className="text-primary font-semibold">{activeStationData.look_angles.elevation.toFixed(1)}°</span>
                   </div>
                 ) : (
                   <div className="text-xs font-mono">

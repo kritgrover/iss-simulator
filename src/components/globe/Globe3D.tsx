@@ -1,6 +1,6 @@
 import { useRef, useMemo, Suspense } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { OrbitControls, Stars, Html } from '@react-three/drei';
 import * as THREE from 'three';
 
 interface Globe3DProps {
@@ -8,6 +8,7 @@ interface Globe3DProps {
     latitude: number;
     longitude: number;
     altitude_km: number;
+    velocity_kmps?: number;
   };
   groundStations: Array<{
     id: string;
@@ -64,8 +65,36 @@ function Atmosphere() {
   );
 }
 
+// Orbital Path Trail
+function OrbitalPath({ radius }: { radius: number }) {
+  const points = useMemo(() => {
+    const orbitPoints = [];
+    const segments = 128;
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      orbitPoints.push(
+        new THREE.Vector3(
+          Math.cos(angle) * radius,
+          Math.sin(angle) * radius * 0.1, // Slight tilt
+          Math.sin(angle) * radius
+        )
+      );
+    }
+    return orbitPoints;
+  }, [radius]);
+
+  const curve = useMemo(() => new THREE.CatmullRomCurve3(points, true), [points]);
+
+  return (
+    <mesh>
+      <tubeGeometry args={[curve, 256, 0.015, 8, true]} />
+      <meshBasicMaterial color="#00ff00" transparent opacity={0.3} />
+    </mesh>
+  );
+}
+
 // ISS Satellite
-function ISS({ position }: { position: { latitude: number; longitude: number; altitude_km: number } }) {
+function ISS({ position }: { position: { latitude: number; longitude: number; altitude_km: number; velocity_kmps?: number } }) {
   const issRef = useRef<THREE.Group>(null);
   const earthRadius = 5;
   const altitudeScale = 0.01;
@@ -85,6 +114,28 @@ function ISS({ position }: { position: { latitude: number; longitude: number; al
 
   return (
     <group>
+      {/* Orbital Path */}
+      <OrbitalPath radius={radius} />
+
+      {/* ISS Info Panel */}
+      <Html position={[issPosition.x, issPosition.y + 0.5, issPosition.z]} center distanceFactor={15}>
+        <div
+          className="px-3 py-2 rounded-lg text-xs font-mono whitespace-nowrap pointer-events-none transition-all duration-300"
+          style={{
+            background: 'rgba(0, 255, 0, 0.1)',
+            border: '1px solid rgba(0, 255, 0, 0.4)',
+            color: '#00ff00',
+            backdropFilter: 'blur(12px)',
+            boxShadow: '0 0 20px rgba(0, 255, 0, 0.3), inset 0 0 20px rgba(0, 255, 0, 0.1)',
+          }}
+        >
+          <div className="font-bold mb-1">🛰️ ISS</div>
+          <div className="text-[9px] opacity-80">
+            {position.altitude_km.toFixed(1)} km • {position.velocity_kmps ? `${position.velocity_kmps.toFixed(2)} km/s` : '7.66 km/s'}
+          </div>
+        </div>
+      </Html>
+
       {/* ISS Model */}
       <group ref={issRef} position={issPosition}>
         {/* Central body */}
@@ -189,6 +240,24 @@ function GroundStationMarker({
 
       {/* Point light for glow */}
       <pointLight position={stationPos} color={stationColor} intensity={station.is_visible ? 1 : 0.3} distance={0.5} />
+
+      {/* Station Label */}
+      <Html position={[stationPos.x, stationPos.y + 0.3, stationPos.z]} center distanceFactor={10}>
+        <div
+          className="px-2 py-1 rounded text-[10px] font-mono whitespace-nowrap pointer-events-none transition-all duration-300"
+          style={{
+            background: `${stationColor}20`,
+            border: `1px solid ${stationColor}60`,
+            color: stationColor,
+            backdropFilter: 'blur(8px)',
+            boxShadow: `0 0 10px ${stationColor}40`,
+            opacity: station.is_visible ? 1 : 0.6,
+            transform: station.is_visible ? 'scale(1.05)' : 'scale(1)',
+          }}
+        >
+          {station.name}
+        </div>
+      </Html>
     </group>
   );
 }
@@ -373,10 +442,22 @@ function Scene({ issPosition, groundStations }: Globe3DProps) {
 
   return (
     <>
-      {/* Lighting setup for realistic Earth */}
-      <ambientLight intensity={0.15} />
-      <directionalLight position={[5, 3, 5]} intensity={1.2} />
-      <directionalLight position={[-5, -3, -5]} intensity={0.3} />
+      {/* Enhanced lighting setup */}
+      <ambientLight intensity={0.2} />
+      {/* Sun light */}
+      <directionalLight
+        position={[10, 5, 10]}
+        intensity={1.5}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+      />
+      {/* Fill lights */}
+      <directionalLight position={[-8, -4, -8]} intensity={0.4} color="#4080ff" />
+      <pointLight position={[0, 10, 0]} intensity={0.3} color="#ffffff" distance={30} />
+
+      {/* Rim light for Earth */}
+      <pointLight position={[-15, 0, 0]} intensity={0.5} color="#60a5fa" distance={25} />
 
       {/* Background stars */}
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
