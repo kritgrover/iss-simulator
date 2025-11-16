@@ -1,7 +1,8 @@
 import { Play, Pause, Clock, Satellite } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { GroundStation } from "@/types/groundStation";
+import Globe3D from "./Globe3D";
 
 interface GlobeViewProps {
   stations: GroundStation[];
@@ -35,23 +36,20 @@ interface GlobeViewProps {
   } | null;
 }
 
-const GlobeView = ({ 
-  stations, 
+const GlobeView = ({
+  stations,
   activeStationId,
-  orbitalData 
+  orbitalData
 }: GlobeViewProps) => {
   const [handoffInProgress, setHandoffInProgress] = useState(false);
   const [prevActiveStation, setPrevActiveStation] = useState(activeStationId);
-  const [earthRotation, setEarthRotation] = useState(0);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number>();
 
   // Detect handoff
   useEffect(() => {
     if (activeStationId !== prevActiveStation && prevActiveStation) {
       setHandoffInProgress(true);
       console.log(`🔄 Handoff visual: ${prevActiveStation} → ${activeStationId}`);
-      
+
       setTimeout(() => {
         setHandoffInProgress(false);
         setPrevActiveStation(activeStationId);
@@ -61,279 +59,34 @@ const GlobeView = ({
     }
   }, [activeStationId, prevActiveStation]);
 
-  // Animation loop
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  // Prepare data for 3D Globe
+  const issPosition = orbitalData?.iss_position || {
+    latitude: 0,
+    longitude: 0,
+    altitude_km: 408,
+    velocity_kmps: 7.66,
+  };
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let lastTime = Date.now();
-
-    const animate = () => {
-      const now = Date.now();
-      const deltaTime = (now - lastTime) / 1000;
-      lastTime = now;
-
-      // Slowly rotate Earth
-      setEarthRotation(prev => (prev + 0.1) % 360);
-
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
-      const earthRadius = 100;
-      const orbitRadius = 180;
-
-      // Draw space background
-      ctx.fillStyle = '#0a0e1a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw orbital path
-      ctx.strokeStyle = '#00d4ff30';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([10, 5]);
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, orbitRadius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Draw Earth shadow/glow
-      const shadowGradient = ctx.createRadialGradient(
-        centerX, centerY, earthRadius,
-        centerX, centerY, earthRadius + 30
-      );
-      shadowGradient.addColorStop(0, '#1e3a8a40');
-      shadowGradient.addColorStop(1, '#1e3a8a00');
-      ctx.fillStyle = shadowGradient;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, earthRadius + 30, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw Earth
-      const earthGradient = ctx.createRadialGradient(
-        centerX - 30, centerY - 30, 20,
-        centerX, centerY, earthRadius
-      );
-      earthGradient.addColorStop(0, '#60a5fa');
-      earthGradient.addColorStop(0.4, '#3b82f6');
-      earthGradient.addColorStop(0.7, '#2563eb');
-      earthGradient.addColorStop(1, '#1e40af');
-
-      ctx.fillStyle = earthGradient;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, earthRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw Earth outline
-      ctx.strokeStyle = '#1e40af';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Draw simplified continents (rotating)
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.rotate((earthRotation * Math.PI) / 180);
-      ctx.fillStyle = '#22c55e';
-      ctx.globalAlpha = 0.6;
-
-      // North America
-      ctx.beginPath();
-      ctx.ellipse(-20, -40, 25, 35, 0.3, 0, Math.PI * 2);
-      ctx.fill();
-
-      // South America
-      ctx.beginPath();
-      ctx.ellipse(-15, 20, 15, 30, 0.2, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Europe/Africa
-      ctx.beginPath();
-      ctx.ellipse(25, -10, 20, 40, -0.2, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Asia
-      ctx.beginPath();
-      ctx.ellipse(50, -30, 30, 25, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.restore();
-      ctx.globalAlpha = 1;
-
-      // Draw all ground stations
-      if (orbitalData?.stations) {
-        orbitalData.stations.forEach(stationData => {
-          const station = stations.find(s => s.id === stationData.id);
-          if (!station) return;
-
-          const stationAngle = ((stationData.lon + earthRotation) * Math.PI) / 180;
-          const latFactor = Math.cos((stationData.lat * Math.PI) / 180);
-          
-          const stationX = centerX + Math.sin(stationAngle) * earthRadius * 0.85 * latFactor;
-          const stationY = centerY - Math.sin((stationData.lat * Math.PI) / 180) * earthRadius * 0.85;
-
-          // Only draw if on visible hemisphere
-          const isOnVisibleSide = Math.cos(stationAngle) > 0;
-          
-          if (isOnVisibleSide) {
-            const isActive = stationData.id === activeStationId;
-            const isTracking = stationData.is_visible;
-            
-            // Draw ground station
-            ctx.fillStyle = station.color;
-            ctx.shadowColor = station.color;
-            ctx.shadowBlur = isActive ? 15 : 8;
-            
-            // Pulsing animation for active/tracking stations
-            const pulse = isTracking ? 3 + Math.sin(Date.now() / 300) * 1.5 : 2;
-            
-            ctx.beginPath();
-            ctx.arc(stationX, stationY, pulse, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.shadowBlur = 0;
-            
-            // Outer ring
-            ctx.strokeStyle = station.color;
-            ctx.lineWidth = isActive ? 2 : 1;
-            ctx.beginPath();
-            ctx.arc(stationX, stationY, isActive ? 10 : 8, 0, Math.PI * 2);
-            ctx.stroke();
-
-            // Label for active or tracking stations
-            if (isActive || isTracking) {
-              ctx.fillStyle = station.color;
-              ctx.font = 'bold 9px monospace';
-              ctx.fillText(station.name, stationX - 15, stationY - 15);
-            }
-
-            // Draw connection line if tracking ISS
-            if (isTracking && orbitalData) {
-              const issLon = orbitalData.iss_position.longitude;
-              const issLat = orbitalData.iss_position.latitude;
-              
-              const issAngle = ((issLon + earthRotation) * Math.PI) / 180;
-              const issLatFactor = Math.cos((issLat * Math.PI) / 180);
-              
-              const issX = centerX + Math.cos(issAngle) * orbitRadius;
-              const issY = centerY + Math.sin(issAngle) * orbitRadius * issLatFactor;
-
-              ctx.strokeStyle = station.color + '60';
-              ctx.lineWidth = 2;
-              ctx.setLineDash([10, 5]);
-              ctx.beginPath();
-              ctx.moveTo(stationX, stationY);
-              ctx.lineTo(issX, issY);
-              ctx.stroke();
-              ctx.setLineDash([]);
-
-              // Draw signal pulses along the line
-              const pulseProgress = (Date.now() % 2000) / 2000;
-              const pulseX = stationX + (issX - stationX) * pulseProgress;
-              const pulseY = stationY + (issY - stationY) * pulseProgress;
-              
-              ctx.fillStyle = station.color;
-              ctx.beginPath();
-              ctx.arc(pulseX, pulseY, 4, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          }
-        });
-      }
-
-      // Draw ISS if we have orbital data
-      if (orbitalData) {
-        const issLon = orbitalData.iss_position.longitude;
-        const issLat = orbitalData.iss_position.latitude;
-        
-        const issAngle = ((issLon + earthRotation) * Math.PI) / 180;
-        const latFactor = Math.cos((issLat * Math.PI) / 180);
-        
-        const issX = centerX + Math.cos(issAngle) * orbitRadius;
-        const issY = centerY + Math.sin(issAngle) * orbitRadius * latFactor;
-
-        // Draw ISS trail
-        ctx.strokeStyle = '#00ff0040';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let i = 1; i <= 20; i++) {
-          const trailAngle = issAngle - (i * 0.1);
-          const trailX = centerX + Math.cos(trailAngle) * orbitRadius;
-          const trailY = centerY + Math.sin(trailAngle) * orbitRadius * latFactor;
-          
-          if (i === 1) {
-            ctx.moveTo(trailX, trailY);
-          } else {
-            ctx.lineTo(trailX, trailY);
-          }
-        }
-        ctx.stroke();
-
-        // Draw ISS glow
-        const issGlow = ctx.createRadialGradient(issX, issY, 0, issX, issY, 25);
-        issGlow.addColorStop(0, '#00ff0080');
-        issGlow.addColorStop(0.5, '#00ff0040');
-        issGlow.addColorStop(1, '#00ff0000');
-        ctx.fillStyle = issGlow;
-        ctx.beginPath();
-        ctx.arc(issX, issY, 25, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw ISS body
-        ctx.save();
-        ctx.translate(issX, issY);
-        ctx.rotate(issAngle + Math.PI / 2);
-
-        // Solar panels (left)
-        ctx.fillStyle = '#3b82f6';
-        ctx.fillRect(-20, -3, 12, 6);
-        
-        // Main body
-        ctx.fillStyle = '#00ff00';
-        ctx.fillRect(-4, -5, 8, 10);
-        
-        // Solar panels (right)
-        ctx.fillStyle = '#3b82f6';
-        ctx.fillRect(8, -3, 12, 6);
-
-        ctx.restore();
-
-        // Draw ISS label
-        ctx.fillStyle = '#00ff00';
-        ctx.font = 'bold 11px monospace';
-        ctx.shadowColor = '#00ff00';
-        ctx.shadowBlur = 5;
-        ctx.fillText('🛰️ ISS', issX + 15, issY - 15);
-        ctx.shadowBlur = 0;
-      }
-
-      // Draw coordinate grid
-      ctx.strokeStyle = '#ffffff10';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 8; i++) {
-        const angle = (i * Math.PI * 2) / 8;
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.lineTo(
-          centerX + Math.cos(angle) * (orbitRadius + 30),
-          centerY + Math.sin(angle) * (orbitRadius + 30)
-        );
-        ctx.stroke();
-      }
-
-      animationFrameRef.current = requestAnimationFrame(animate);
-    };
-
-    animate();
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [earthRotation, orbitalData, stations, activeStationId]);
+  const groundStationsWithVisibility = orbitalData?.stations
+    ? orbitalData.stations.map((stationData) => {
+        const station = stations.find((s) => s.id === stationData.id);
+        return {
+          id: stationData.id,
+          name: stationData.name,
+          lat: stationData.lat,
+          lon: stationData.lon,
+          color: station?.color || '#888888',
+          is_visible: stationData.is_visible,
+        };
+      })
+    : stations.map((station) => ({
+        id: station.id,
+        name: station.name,
+        lat: station.lat,
+        lon: station.lon,
+        color: station.color,
+        is_visible: false,
+      }));
 
   const activeStation = stations.find(s => s.id === activeStationId);
   const activeStationData = orbitalData?.stations?.find(s => s.id === activeStationId);
@@ -379,18 +132,22 @@ const GlobeView = ({
         </div>
       </div>
       
-      <div className="flex-1 flex items-center justify-center p-4 relative">
-        {/* Main Canvas */}
-        <div className="relative">
-          <canvas 
-            ref={canvasRef}
-            width={600}
-            height={600}
-            className="max-w-full h-auto"
+      <div className="flex-1 flex items-center justify-center relative">
+        {/* 3D Globe */}
+        <div className="w-full h-full">
+          <Globe3D
+            issPosition={issPosition}
+            groundStations={groundStationsWithVisibility}
+            orbitalPath={orbitalData?.orbital_path}
           />
+        </div>
 
-          {/* Legend */}
-          <div className="absolute top-4 left-4 space-y-2">
+        {/* Legend and Controls Info */}
+        <div className="absolute top-4 left-4 space-y-2 z-10">
+          <div className="bg-black/70 backdrop-blur-sm px-3 py-2 rounded-lg border border-border/50 space-y-2">
+            <div className="text-[10px] text-secondary/80 mb-2">
+              🖱️ Click + Drag to rotate • Scroll to zoom
+            </div>
             <div className="flex items-center gap-2 text-xs font-mono">
               <div className="w-3 h-3 rounded-full bg-blue-500" />
               <span className="text-secondary">Earth</span>
@@ -401,8 +158,8 @@ const GlobeView = ({
             </div>
             {activeStation && (
               <div className="flex items-center gap-2 text-xs font-mono">
-                <div 
-                  className="w-3 h-3 rounded-full" 
+                <div
+                  className="w-3 h-3 rounded-full"
                   style={{ backgroundColor: activeStation.color }}
                 />
                 <span className="text-secondary">{activeStation.name}</span>
