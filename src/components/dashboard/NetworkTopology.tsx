@@ -106,7 +106,8 @@ const NetworkTopology = ({
       const isLastStation = currentIndex >= 0 && currentIndex === route.length - 2;
       const isDelivered = bundle.status === 'DELIVERED';
 
-      if (isLastStation && !isDelivered) {
+      // Only mark as last station if bundle is actually AT the last ground station
+      if (isLastStation && !isDelivered && currentCustodian === route[route.length - 2]?.toLowerCase()) {
         bundlesAtLastStation.add(bundle.bundle_id);
         const lastGroundStation = route[route.length - 2]?.toLowerCase();
         const issLinkKey = `${lastGroundStation}-iss`;
@@ -142,8 +143,17 @@ const NetworkTopology = ({
 
       if (isLastStation && !isDelivered) {
         // Bundle at last ground station - ONLY show ISS link, reset all previous links
-        const issLinkKey = bundlesAtLastStationLinks.get(bundle.bundle_id)!;
         const lastGroundStation = route[route.length - 2]?.toLowerCase();
+        if (currentCustodian !== lastGroundStation) {
+          // Bundle is not yet at the last station, skip
+          return;
+        }
+
+        const issLinkKey = bundlesAtLastStationLinks.get(bundle.bundle_id);
+        if (!issLinkKey) {
+          // Should not happen, but skip if no ISS link key
+          return;
+        }
 
         // Check if this last station is the one currently in contact with ISS
         const isStationWithIssContact = issInContact && lastGroundStation === stationWithIssContact;
@@ -375,6 +385,31 @@ const NetworkTopology = ({
           // Don't add to newLinkStates - this resets the link to default
         }
       });
+    });
+
+    stations.forEach((station) => {
+      const stationIssLinkKey = `${station.id.toLowerCase()}-iss`;
+      const linkState = newLinkStates.get(stationIssLinkKey);
+      
+      // If this ISS link has waiting_iss state, verify it's correct
+      if (linkState && linkState.state === 'waiting_iss') {
+        // Check if this station is actually the last ground station for this bundle
+        const bundle = allBundles.find((b) => b.bundle_id === linkState.bundleId);
+        if (bundle) {
+          const route = bundle.route || bundle.hops || [];
+          const lastGroundStation = route.length >= 2 ? route[route.length - 2]?.toLowerCase() : null;
+          const currentCustodian = bundle.current_custodian?.toLowerCase();
+          
+          // Only keep waiting_iss if this is the correct last station AND bundle is at that station
+          if (lastGroundStation !== station.id.toLowerCase() || currentCustodian !== lastGroundStation) {
+            // Wrong station - remove waiting_iss state
+            newLinkStates.delete(stationIssLinkKey);
+          }
+        } else {
+          // Bundle not found - remove waiting_iss state
+          newLinkStates.delete(stationIssLinkKey);
+        }
+      }
     });
 
     // Clean up old completed states after 2 seconds
