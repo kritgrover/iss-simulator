@@ -93,23 +93,39 @@ const NetworkTopology = ({
     // Process all bundles to track their routes
     const allBundles = Object.values(dtnQueues).flat();
     
+    // Helper function to get the last ground station from a route
+    // Routes may or may not include "ISS" as the last element
+    const getLastGroundStation = (route: string[]): string | null => {
+      if (route.length < 1) return null;
+      const lastElement = route[route.length - 1]?.toLowerCase();
+      if (lastElement === 'iss') {
+        // Route includes ISS, so second-to-last is last ground station
+        return route.length >= 2 ? route[route.length - 2]?.toLowerCase() || null : null;
+      } else {
+        // Route doesn't include ISS, so last element is last ground station
+        return route[route.length - 1]?.toLowerCase() || null;
+      }
+    };
+    
     // Track bundles that reached last ground station - need to reset their previous links
     const bundlesAtLastStation = new Set<string>();
     const bundlesAtLastStationLinks = new Map<string, string>(); // bundleId -> issLinkKey
 
     allBundles.forEach((bundle) => {
       const route = bundle.route || bundle.hops || [];
-      if (route.length < 2) return;
+      if (route.length < 1) return;
 
       const currentCustodian = bundle.current_custodian?.toLowerCase();
-      const currentIndex = route.findIndex((r) => r.toLowerCase() === currentCustodian);
-      const isLastStation = currentIndex >= 0 && currentIndex === route.length - 2;
+      const lastGroundStation = getLastGroundStation(route);
+      
+      if (!lastGroundStation) return;
+      
+      // Bundle is at last station if current custodian matches the last ground station
+      const isLastStation = currentCustodian === lastGroundStation;
       const isDelivered = bundle.status === 'DELIVERED';
 
       // Only mark as last station if bundle is actually AT the last ground station
-      if (isLastStation && !isDelivered && currentCustodian === route[route.length - 2]?.toLowerCase()) {
-        const lastGroundStation = route[route.length - 2]?.toLowerCase();
-        
+      if (isLastStation && !isDelivered) {
         // Verify bundle is actually in this station's queue
         const stationQueue = dtnQueues[lastGroundStation] || [];
         const bundleInQueue = stationQueue.some(b => b.bundle_id === bundle.bundle_id);
@@ -150,8 +166,8 @@ const NetworkTopology = ({
 
       if (isLastStation && !isDelivered) {
         // Bundle at last ground station - ONLY show ISS link, reset all previous links
-        const lastGroundStation = route[route.length - 2]?.toLowerCase();
-        if (currentCustodian !== lastGroundStation) {
+        const lastGroundStation = getLastGroundStation(route);
+        if (!lastGroundStation || currentCustodian !== lastGroundStation) {
           // Bundle is not yet at the last station, skip
           return;
         }
@@ -220,8 +236,8 @@ const NetworkTopology = ({
         }
       } else if (isDelivered) {
         // Bundle delivered - mark ISS link as complete
-        if (route.length >= 2) {
-          const lastGroundStation = route[route.length - 2]?.toLowerCase();
+        const lastGroundStation = getLastGroundStation(route);
+        if (lastGroundStation) {
           const issLinkKey = `${lastGroundStation}-iss`;
           newLinkStates.set(issLinkKey, {
             state: 'all_complete',
@@ -412,7 +428,7 @@ const NetworkTopology = ({
         const bundle = allBundles.find((b) => b.bundle_id === linkState.bundleId);
         if (bundle) {
           const route = bundle.route || bundle.hops || [];
-          const lastGroundStation = route.length >= 2 ? route[route.length - 2]?.toLowerCase() : null;
+          const lastGroundStation = getLastGroundStation(route);
           const currentCustodian = bundle.current_custodian?.toLowerCase();
           
           // Verify: bundle must be at this station AND this station must be the last ground station
