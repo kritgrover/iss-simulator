@@ -165,7 +165,7 @@ const NetworkTopology = ({
       const activeTransmission = activeTransmissions.find((t) => t.bundle_id === bundle.bundle_id);
 
       if (isLastStation && !isDelivered) {
-        // Bundle at last ground station - ONLY show ISS link, reset all previous links
+        // Bundle at last ground station - mark all previous links as completed, then handle ISS link
         const lastGroundStation = getLastGroundStation(route);
         if (!lastGroundStation || currentCustodian !== lastGroundStation) {
           // Bundle is not yet at the last station, skip
@@ -178,6 +178,30 @@ const NetworkTopology = ({
         if (!bundleInQueue) {
           // Bundle not in this station's queue, skip
           return;
+        }
+
+        // Mark all previous links in the route as completed (green)
+        if (currentIndex > 0) {
+          // Mark all links from start up to and including the link TO the last ground station
+          for (let i = 0; i < currentIndex; i++) {
+            const prevFrom = route[i]?.toLowerCase();
+            const prevTo = route[i + 1]?.toLowerCase();
+            if (prevFrom && prevTo) {
+              const prevLinkKey = `${prevFrom}-${prevTo}`;
+              // Don't mark ISS links as completed here (they're handled separately)
+              if (!prevLinkKey.includes('-iss')) {
+                const existingState = newLinkStates.get(prevLinkKey);
+                // Only mark as completed if not already marked as transmitting or waiting
+                if (!existingState || existingState.state === 'completed' || existingState.state === 'all_complete') {
+                  newLinkStates.set(prevLinkKey, {
+                    state: 'completed',
+                    bundleId: bundle.bundle_id,
+                    timestamp: now,
+                  });
+                }
+              }
+            }
+          }
         }
 
         const issLinkKey = bundlesAtLastStationLinks.get(bundle.bundle_id);
