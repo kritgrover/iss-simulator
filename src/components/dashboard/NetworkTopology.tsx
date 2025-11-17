@@ -108,10 +108,17 @@ const NetworkTopology = ({
 
       // Only mark as last station if bundle is actually AT the last ground station
       if (isLastStation && !isDelivered && currentCustodian === route[route.length - 2]?.toLowerCase()) {
-        bundlesAtLastStation.add(bundle.bundle_id);
         const lastGroundStation = route[route.length - 2]?.toLowerCase();
-        const issLinkKey = `${lastGroundStation}-iss`;
-        bundlesAtLastStationLinks.set(bundle.bundle_id, issLinkKey);
+        
+        // Verify bundle is actually in this station's queue
+        const stationQueue = dtnQueues[lastGroundStation] || [];
+        const bundleInQueue = stationQueue.some(b => b.bundle_id === bundle.bundle_id);
+        
+        if (bundleInQueue) {
+          bundlesAtLastStation.add(bundle.bundle_id);
+          const issLinkKey = `${lastGroundStation}-iss`;
+          bundlesAtLastStationLinks.set(bundle.bundle_id, issLinkKey);
+        }
       }
     });
 
@@ -146,6 +153,14 @@ const NetworkTopology = ({
         const lastGroundStation = route[route.length - 2]?.toLowerCase();
         if (currentCustodian !== lastGroundStation) {
           // Bundle is not yet at the last station, skip
+          return;
+        }
+        
+        // Additional verification: ensure the bundle is actually queued at this station
+        const stationQueue = dtnQueues[lastGroundStation] || [];
+        const bundleInQueue = stationQueue.some(b => b.bundle_id === bundle.bundle_id);
+        if (!bundleInQueue) {
+          // Bundle not in this station's queue, skip
           return;
         }
 
@@ -400,9 +415,17 @@ const NetworkTopology = ({
           const lastGroundStation = route.length >= 2 ? route[route.length - 2]?.toLowerCase() : null;
           const currentCustodian = bundle.current_custodian?.toLowerCase();
           
-          // Only keep waiting_iss if this is the correct last station AND bundle is at that station
-          if (lastGroundStation !== station.id.toLowerCase() || currentCustodian !== lastGroundStation) {
-            // Wrong station - remove waiting_iss state
+          // Verify: bundle must be at this station AND this station must be the last ground station
+          const isCorrectStation = lastGroundStation === station.id.toLowerCase();
+          const bundleAtStation = currentCustodian === station.id.toLowerCase();
+          
+          // Also verify bundle is actually in this station's queue
+          const stationQueue = dtnQueues[station.id.toLowerCase()] || [];
+          const bundleInQueue = stationQueue.some(b => b.bundle_id === linkState.bundleId);
+          
+          // Only keep waiting_iss if all conditions are met
+          if (!isCorrectStation || !bundleAtStation || !bundleInQueue) {
+            // Wrong station or bundle not actually here - remove waiting_iss state
             newLinkStates.delete(stationIssLinkKey);
           }
         } else {
