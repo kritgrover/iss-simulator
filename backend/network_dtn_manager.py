@@ -737,4 +737,14 @@ class NetworkDTNManager(DTNBundleManager):
                     del self.active_transmissions[bundle_id]
         
         return completed
+    
+    def complete_transmission(self, bundle_id: str, data_rate_bps: float) -> Optional[Dict]:
+        """
+        Complete a bundle transmission
+        
+        Override for NetworkDTNManager:        
+        We return None here to prevent main.py from simulating an ACK 
+        and causing double-processing.
+        """
+        return None
 

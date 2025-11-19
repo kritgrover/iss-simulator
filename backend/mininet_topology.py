@@ -213,6 +213,16 @@ class ISSTopology:
             error("❌ Station {} not found\n".format(station_id))
             return
         
+        if not self.net or not hasattr(self.net, 'running') or not self.net.running:
+            # Network not running yet, just store parameters
+            self.iss_links[station_id] = {
+                'bandwidth_mbps': bandwidth_mbps,
+                'delay_ms': delay_ms,
+                'loss_percent': loss_percent,
+                'station_node': self.station_nodes[station_id]
+            }
+            return
+        
         if station_id in self.iss_links:
             # Update existing link parameters
             self.update_iss_link(station_id, bandwidth_mbps, delay_ms, loss_percent)
@@ -245,6 +255,10 @@ class ISSTopology:
             loss_percent: New packet loss percentage
             log_update: Whether to log the update (default: True)
         """
+        if not self.net or not hasattr(self.net, 'running') or not self.net.running:
+            # Network not running, can't apply parameters
+            return
+        
         if station_id not in self.iss_links:
             # Create link if it doesn't exist
             self.create_iss_link(station_id, bandwidth_mbps, delay_ms, loss_percent)
@@ -269,19 +283,53 @@ class ISSTopology:
                               delay_ms: float, loss_percent: float):
         """
         Apply link parameters using tc (traffic control) commands
-        
-        Note: This is a simplified approach. In a production system,
-        you'd use Mininet's link parameter update mechanisms or tc directly.
         """
-        # Convert Mbps to kbps for tc
-        bandwidth_kbps = bandwidth_mbps * 1000
+        if self.net is None or not self.net.running:
+            return
+
+        # Get the station node and ISS node
+        station_node = self.station_nodes.get(station_id)
+        if not station_node:
+            error("❌ Station {} not found for link update\n".format(station_id))
+            return
+
+        if not self.iss_node:
+            error("❌ ISS node not found\n")
+            return
+
+        # Find links to the switch
+        # Note: In our star topology, both connect to the switch
+        station_links = self.net.linksBetween(station_node, self.switch)
+        iss_links = self.net.linksBetween(self.iss_node, self.switch)
         
-        # Apply to ISS node interface (outgoing to station)
-        # Note: This is a placeholder - actual implementation would use tc commands
-        # or Mininet's link update methods
+        if not station_links or not iss_links:
+            # This can happen if links aren't established yet
+            return
         
-        # For now, we store parameters and they'll be used by the network layer
-        pass
+        station_link = station_links[0]
+        iss_link = iss_links[0]
+        
+        # Get the interfaces on the nodes (not the switch side)
+        if station_link.intf1.node == station_node:
+            station_intf = station_link.intf1
+        else:
+            station_intf = station_link.intf2
+            
+        if iss_link.intf1.node == self.iss_node:
+            iss_intf = iss_link.intf1
+        else:
+            iss_intf = iss_link.intf2
+            
+        # Apply parameters using Mininet's config method (which uses tc under the hood)
+        try:
+            # Update station interface (uplink/downlink)
+            station_intf.config(bw=bandwidth_mbps, delay='{}ms'.format(delay_ms), loss=loss_percent)
+            
+            # Update ISS interface
+            iss_intf.config(bw=bandwidth_mbps, delay='{}ms'.format(delay_ms), loss=loss_percent)
+            
+        except Exception as e:
+            error("❌ Failed to apply link parameters: {}\n".format(e))
     
     def remove_iss_link(self, station_id: str):
         """

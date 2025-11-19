@@ -618,6 +618,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             # Check if we should log link updates (every 5 seconds)
             should_log_link_updates = USE_MININET and topology and link_param_manager and (now - last_link_log_time).total_seconds() >= 5.0
             
+            # Track which stations we've updated this iteration
+            updated_stations = set()
+            
             for station_data in stations_data:
                 if station_data["is_visible"]:
                     radial_velocity_data = tracker.calculate_radial_velocity(
@@ -650,13 +653,31 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             mininet_params["loss_percent"],
                             log_update=should_log_link_updates
                         )
+                        updated_stations.add(station_data["id"])
+            
+            # Update non-visible stations to minimal link parameters
+            # This ensures links are properly simulated even when stations can't see ISS
+            if USE_MININET and topology and link_param_manager:
+                for station_data in stations_data:
+                    station_id = station_data["id"]
+                    if not station_data["is_visible"] and station_id not in updated_stations:
+                        # Set minimal parameters for non-visible stations
+                        min_params = {
+                            "bandwidth_mbps": link_param_manager.MIN_BANDWIDTH_MBPS,
+                            "delay_ms": 100.0,  # Default delay when not visible
+                            "loss_percent": link_param_manager.MAX_LOSS_PERCENT,
+                        }
+                        topology.update_iss_link(
+                            station_id,
+                            min_params["bandwidth_mbps"],
+                            min_params["delay_ms"],
+                            min_params["loss_percent"],
+                            log_update=False  # Don't spam logs for non-visible stations
+                        )
             
             # Update log time after processing all stations (only once per iteration)
             if should_log_link_updates:
                 last_link_log_time = now
-            
-            # Note: We don't update links for non-visible stations to avoid spam
-            # Links will retain their last values or remain at initial state
             
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()
