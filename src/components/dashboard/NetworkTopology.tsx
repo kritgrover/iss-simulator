@@ -269,6 +269,27 @@ const NetworkTopology = ({
             timestamp: now,
           });
         }
+
+        // Also mark all previous links in the route as completed (green)
+        // This ensures the full path stays visible when delivered
+        const routeLength = route.length;
+        if (routeLength > 1) {
+          for (let i = 0; i < routeLength - 1; i++) {
+            const prevFrom = route[i]?.toLowerCase();
+            const prevTo = route[i + 1]?.toLowerCase();
+            if (prevFrom && prevTo) {
+              const prevLinkKey = `${prevFrom}-${prevTo}`;
+              if (!prevLinkKey.includes('-iss')) {
+                // Always mark as completed for delivered bundles
+                newLinkStates.set(prevLinkKey, {
+                  state: 'completed',
+                  bundleId: bundle.bundle_id,
+                  timestamp: now,
+                });
+              }
+            }
+          }
+        }
       } else if (activeTransmission && !bundlesAtLastStation.has(bundle.bundle_id)) {
         // Active transmission - highlight current link and all previous links in route
         const from = activeTransmission.from_station.toLowerCase();
