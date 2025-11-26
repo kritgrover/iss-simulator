@@ -191,8 +191,8 @@ const NetworkTopology = ({
               // Don't mark ISS links as completed here (they're handled separately)
               if (!prevLinkKey.includes('-iss')) {
                 const existingState = newLinkStates.get(prevLinkKey);
-                // Only mark as completed if not already marked as transmitting or waiting
-                if (!existingState || existingState.state === 'completed' || existingState.state === 'all_complete') {
+                // Mark as completed - allow overriding transmitting state for bundles at last station
+                if (!existingState || existingState.state !== 'waiting_iss') {
                   newLinkStates.set(prevLinkKey, {
                     state: 'completed',
                     bundleId: bundle.bundle_id,
@@ -305,8 +305,8 @@ const NetworkTopology = ({
                 continue;
               }
               const existingState = newLinkStates.get(prevLinkKey);
-              // Only mark as completed if not already marked as transmitting or waiting
-              if (!existingState || existingState.state === 'completed' || existingState.state === 'all_complete') {
+              // Only mark as completed if not a waiting_iss state
+              if (!existingState || existingState.state !== 'waiting_iss') {
                 newLinkStates.set(prevLinkKey, {
                   state: 'completed',
                   bundleId: bundle.bundle_id,
@@ -391,7 +391,8 @@ const NetworkTopology = ({
                 continue;
               }
               const prevExistingState = newLinkStates.get(prevLinkKey);
-              if (!prevExistingState || prevExistingState.state === 'completed' || prevExistingState.state === 'all_complete') {
+              // Only mark as completed if not a waiting_iss state
+              if (!prevExistingState || prevExistingState.state !== 'waiting_iss') {
                 newLinkStates.set(prevLinkKey, {
                   state: 'completed',
                   bundleId: transmission.bundle_id,
