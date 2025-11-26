@@ -370,7 +370,8 @@ const NetworkTopology = ({
         // Skip if this is an ISS link for bundle at last station (already handled above)
         if (!(isIssLink && bundlesAtLastStation.has(transmission.bundle_id))) {
           const existingState = newLinkStates.get(linkKey);
-          if (!existingState || existingState.state === 'completed' || existingState.state === 'all_complete') {
+          if (!existingState || (existingState.bundleId === transmission.bundle_id && 
+              existingState.state !== 'completed' && existingState.state !== 'all_complete')) {
             newLinkStates.set(linkKey, {
               state: isIssLink ? 'transmitting_iss' : 'transmitting',
               bundleId: transmission.bundle_id,
