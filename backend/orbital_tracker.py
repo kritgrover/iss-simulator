@@ -13,6 +13,10 @@ class OrbitalTracker:
         name, line1, line2 = tle_lines
         self.satellite = EarthSatellite(line1, line2, name, self.ts)
         
+        # Cache for pass predictions to avoid heavy recalculation
+        # Key: (lat, lon, min_el) -> Value: (calc_time, result)
+        self._pass_cache = {}
+        
         print(f"🛰️  Initialized tracker for: {name}")
     
     def get_current_position(self) -> Dict:
@@ -127,9 +131,33 @@ class OrbitalTracker:
         Predict next pass over ground station
         Finds the next AOS (Acquisition of Signal) event
         """
+        # Check cache first
+        cache_key = (ground_lat, ground_lon, min_elevation)
+        now_dt = datetime.now(timezone.utc)
+        
+        if cache_key in self._pass_cache:
+            calc_time, cached_result = self._pass_cache[cache_key]
+            age_seconds = (now_dt - calc_time).total_seconds()
+            
+            # Reuse cache if less than 60 seconds old
+            if age_seconds < 60:
+                # Update minutes_until based on elapsed time
+                minutes_elapsed = age_seconds / 60.0
+                updated_result = cached_result.copy()
+                if updated_result["minutes_until"] != -1:
+                    updated_result["minutes_until"] = max(0, int(cached_result["minutes_until"] - minutes_elapsed))
+                return updated_result
+        
         t_start = self.ts.now()
         ground_station = wgs84.latlon(ground_lat, ground_lon)
         
+        # ... calculation ...
+        
+        # Helper to store result in cache and return
+        def cache_and_return(result):
+            self._pass_cache[cache_key] = (now_dt, result)
+            return result
+
         # Check if currently in a pass
         difference = self.satellite - ground_station
         current_topo = difference.at(t_start)
@@ -166,20 +194,20 @@ class OrbitalTracker:
             # Found AOS: satellite was below threshold and is now above
             if alt_prev.degrees <= min_elevation and alt_check.degrees > min_elevation:
                 # Found next pass!
-                return {
+                return cache_and_return({
                     "start_time": t_check.utc_iso(),
                     "minutes_until": int(minutes_ahead),
                     "max_elevation": float(alt_check.degrees),  # Rough estimate
                     "azimuth": float(az_check.degrees)
-                }
+                })
         
         # No pass found within max_hours
-        return {
+        return cache_and_return({
             "start_time": None,
             "minutes_until": -1,
             "max_elevation": 0.0,
             "azimuth": 0.0
-        }
+        })
     
     def _add_minutes_to_time(self, time_obj, minutes: int):
         """Helper to add minutes to a Skyfield time object"""
