@@ -269,27 +269,6 @@ const NetworkTopology = ({
             timestamp: now,
           });
         }
-
-        // Also mark all previous links in the route as completed (green)
-        // This ensures the full path stays visible when delivered
-        const routeLength = route.length;
-        if (routeLength > 1) {
-          for (let i = 0; i < routeLength - 1; i++) {
-            const prevFrom = route[i]?.toLowerCase();
-            const prevTo = route[i + 1]?.toLowerCase();
-            if (prevFrom && prevTo) {
-              const prevLinkKey = `${prevFrom}-${prevTo}`;
-              if (!prevLinkKey.includes('-iss')) {
-                // Always mark as completed for delivered bundles
-                newLinkStates.set(prevLinkKey, {
-                  state: 'completed',
-                  bundleId: bundle.bundle_id,
-                  timestamp: now,
-                });
-              }
-            }
-          }
-        }
       } else if (activeTransmission && !bundlesAtLastStation.has(bundle.bundle_id)) {
         // Active transmission - highlight current link and all previous links in route
         const from = activeTransmission.from_station.toLowerCase();
@@ -525,7 +504,17 @@ const NetworkTopology = ({
 
   // Get link color based on state
   const getLinkColor = (linkKey: string): string => {
-    const state = linkStates.get(linkKey);
+    let state = linkStates.get(linkKey);
+    
+    // If not found, try reverse direction
+    if (!state) {
+      const parts = linkKey.split('-');
+      if (parts.length === 2) {
+        const reverseKey = `${parts[1]}-${parts[0]}`;
+        state = linkStates.get(reverseKey);
+      }
+    }
+
     if (!state) return '#6b7280'; // Default gray
 
     switch (state.state) {
@@ -544,7 +533,17 @@ const NetworkTopology = ({
 
   // Get link width based on state
   const getLinkWidth = (linkKey: string): number => {
-    const state = linkStates.get(linkKey);
+    let state = linkStates.get(linkKey);
+
+    // If not found, try reverse direction
+    if (!state) {
+      const parts = linkKey.split('-');
+      if (parts.length === 2) {
+        const reverseKey = `${parts[1]}-${parts[0]}`;
+        state = linkStates.get(reverseKey);
+      }
+    }
+
     if (!state) return 1;
 
     switch (state.state) {
