@@ -422,6 +422,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         )
                         if route:
                             next_bundle.route = route
+                            # Persist the calculated route to prevent recalculation on restart
+                            dtn_manager.db_manager.update_bundle_route(next_bundle_id, route)
+                            
                             print(f"🗺️  Calculated route for bundle {next_bundle_id[:8]}: {' → '.join(route)}")
                             # Use first hop from route
                             if len(route) > 1:

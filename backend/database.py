@@ -159,6 +159,24 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def update_bundle_route(self, bundle_id: str, route: List[str]):
+        """Update the route for a bundle."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now(timezone.utc).isoformat()
+        route_json = json.dumps(route)
+        
+        try:
+            cursor.execute('''
+            UPDATE bundles SET route = ?, updated_at = ? WHERE bundle_id = ?
+            ''', (route_json, now, bundle_id))
+            conn.commit()
+        except Exception as e:
+            print(f"❌ Database error updating route for bundle {bundle_id}: {e}")
+        finally:
+            conn.close()
+
     def get_all_bundles(self) -> List[Dict[str, Any]]:
         """Retrieve all bundles from the database."""
         conn = self.get_connection()
