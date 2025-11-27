@@ -175,7 +175,7 @@ function ISS({ position }: { position: { latitude: number; longitude: number; al
   );
 }
 
-// Ground Station Marker (renders on Earth surface, rotates with Earth)
+// Ground Station Marker (renders on Earth surface)
 function GroundStationMarker({
   station,
 }: {
@@ -262,24 +262,20 @@ function GroundStationMarker({
   );
 }
 
-// Connection Lines (in world space, connecting rotating stations to ISS)
+// Connection Lines
 function ConnectionLines({
   groundStations,
   issPosition,
-  earthGroupRef,
 }: {
   groundStations: Array<{
     id: string;
-    name: string;
     lat: number;
     lon: number;
     color: string;
     is_visible?: boolean;
   }>;
   issPosition: { latitude: number; longitude: number; altitude_km: number };
-  earthGroupRef: React.RefObject<THREE.Group>;
 }) {
-  const groupRef = useRef<THREE.Group>(null);
   const earthRadius = 5;
   const altitudeScale = 0.01;
 
@@ -292,58 +288,24 @@ function ConnectionLines({
     [issPosition.latitude, issPosition.longitude, issPosition.altitude_km]
   );
 
-  // Update connection lines each frame based on Earth rotation
-  useFrame(() => {
-    if (!earthGroupRef.current || !groupRef.current) return;
-
-    const earthRotation = earthGroupRef.current.rotation.y;
-
-    // Update each visible station's connection line
-    groundStations
-      .filter((station) => station.is_visible)
-      .forEach((station, index) => {
-        const child = groupRef.current?.children[index];
-        if (!child || !(child instanceof THREE.Mesh)) return;
-
-        // Calculate station position in world space
-        const stationLocalPos = latLonToVector3(station.lat, station.lon, earthRadius + 0.02);
-        const rotatedStationPos = stationLocalPos.clone().applyAxisAngle(
-          new THREE.Vector3(0, 1, 0),
-          earthRotation
-        );
-
-        // Update geometry
-        const curve = new THREE.CatmullRomCurve3([rotatedStationPos, issPos]);
-        const newGeometry = new THREE.TubeGeometry(curve, 32, 0.008, 8, false);
-        child.geometry.dispose();
-        child.geometry = newGeometry;
-      });
-  });
-
   const visibleStations = useMemo(
     () => groundStations.filter((station) => station.is_visible),
     [groundStations]
   );
 
   return (
-    <group ref={groupRef}>
-      {visibleStations.map((station) => (
-        <mesh key={`connection-${station.id}`}>
-          <tubeGeometry
-            args={[
-              new THREE.CatmullRomCurve3([
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, 0, 0),
-              ]),
-              32,
-              0.008,
-              8,
-              false,
-            ]}
-          />
-          <meshBasicMaterial color={station.color} transparent opacity={0.4} />
-        </mesh>
-      ))}
+    <group>
+      {visibleStations.map((station) => {
+        const stationPos = latLonToVector3(station.lat, station.lon, earthRadius + 0.02);
+        const curve = new THREE.CatmullRomCurve3([stationPos, issPos]);
+        
+        return (
+          <mesh key={`connection-${station.id}`}>
+            <tubeGeometry args={[curve, 32, 0.008, 8, false]} />
+            <meshBasicMaterial color={station.color} transparent opacity={0.4} />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -358,11 +320,10 @@ function LoadingFallback() {
   );
 }
 
-// Wrapper for Earth that exposes its rotation ref
-function EarthWithStations({
+// The main Rotating World component
+function RotatingWorld({
   groundStations,
   issPosition,
-  earthGroupRef,
 }: {
   groundStations: Array<{
     id: string;
@@ -372,12 +333,12 @@ function EarthWithStations({
     color: string;
     is_visible?: boolean;
   }>;
-  issPosition: { latitude: number; longitude: number; altitude_km: number };
-  earthGroupRef: React.RefObject<THREE.Group>;
+  issPosition: { latitude: number; longitude: number; altitude_km: number; velocity_kmps?: number };
 }) {
+  const groupRef = useRef<THREE.Group>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
 
-  // Load textures from public URLs
+  // Load textures
   const [earthDayMap, earthNightMap, cloudsMap, earthSpecularMap] = useLoader(THREE.TextureLoader, [
     'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg',
     'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png',
@@ -385,42 +346,33 @@ function EarthWithStations({
     'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_specular_2048.jpg',
   ]);
 
-  // Rotate Earth, clouds, and stations together
+  // Rotate the entire world group slowly
   useFrame(() => {
-    if (earthGroupRef.current) {
-      earthGroupRef.current.rotation.y += 0.001;
+    if (groupRef.current) {
+      // Slower, more realistic-feeling rotation (not real-time, but cinematic)
+      groupRef.current.rotation.y += 0.0001; 
     }
+    // Clouds rotate slightly relative to the earth
     if (cloudsRef.current) {
-      cloudsRef.current.rotation.y += 0.0012; // Clouds rotate slightly faster
+      cloudsRef.current.rotation.y += 0.00005; 
     }
   });
 
   return (
-    <group>
-      {/* Earth group that rotates with stations */}
-      <group ref={earthGroupRef}>
-        {/* Main Earth sphere */}
-        <mesh>
-          <sphereGeometry args={[5, 64, 64]} />
-          <meshPhongMaterial
-            map={earthDayMap}
-            emissiveMap={earthNightMap}
-            emissive={new THREE.Color(0xffff88)}
-            emissiveIntensity={0.8}
-            specularMap={earthSpecularMap}
-            specular={new THREE.Color(0x333333)}
-            shininess={10}
-          />
-        </mesh>
-
-        {/* Ground Stations - inside Earth group so they rotate with it */}
-        {groundStations.map((station) => (
-          <GroundStationMarker
-            key={station.id}
-            station={station}
-          />
-        ))}
-      </group>
+    <group ref={groupRef}>
+      {/* Main Earth sphere */}
+      <mesh>
+        <sphereGeometry args={[5, 64, 64]} />
+        <meshPhongMaterial
+          map={earthDayMap}
+          emissiveMap={earthNightMap}
+          emissive={new THREE.Color(0xffff88)}
+          emissiveIntensity={0.8}
+          specularMap={earthSpecularMap}
+          specular={new THREE.Color(0x333333)}
+          shininess={10}
+        />
+      </mesh>
 
       {/* Cloud layer */}
       <mesh ref={cloudsRef}>
@@ -432,19 +384,36 @@ function EarthWithStations({
           depthWrite={false}
         />
       </mesh>
+
+      {/* Atmosphere - inside the group? No, keeps simpler if atmosphere is separate but it scales with earth. 
+          Actually, atmosphere shader uses view angle. It's fine inside. */}
+      
+      {/* Ground Stations */}
+      {groundStations.map((station) => (
+        <GroundStationMarker
+          key={station.id}
+          station={station}
+        />
+      ))}
+
+      {/* ISS - Now rotates with the Earth system */}
+      <ISS position={issPosition} />
+
+      {/* Connection Lines - Now rotate with the Earth system */}
+      <ConnectionLines
+        groundStations={groundStations}
+        issPosition={issPosition}
+      />
     </group>
   );
 }
 
 // Main Scene
 function Scene({ issPosition, groundStations }: Globe3DProps) {
-  const earthGroupRef = useRef<THREE.Group>(null);
-
   return (
     <>
       {/* Enhanced lighting setup */}
       <ambientLight intensity={0.2} />
-      {/* Sun light */}
       <directionalLight
         position={[10, 5, 10]}
         intensity={1.5}
@@ -452,35 +421,21 @@ function Scene({ issPosition, groundStations }: Globe3DProps) {
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
       />
-      {/* Fill lights */}
       <directionalLight position={[-8, -4, -8]} intensity={0.4} color="#4080ff" />
       <pointLight position={[0, 10, 0]} intensity={0.3} color="#ffffff" distance={30} />
-
-      {/* Rim light for Earth */}
       <pointLight position={[-15, 0, 0]} intensity={0.5} color="#60a5fa" distance={25} />
 
       {/* Background stars */}
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
-      {/* Earth with texture loading - includes ground stations */}
+      {/* Rotating Earth System */}
       <Suspense fallback={<LoadingFallback />}>
-        <EarthWithStations
-          groundStations={groundStations}
+        <RotatingWorld 
           issPosition={issPosition}
-          earthGroupRef={earthGroupRef}
+          groundStations={groundStations}
         />
         <Atmosphere />
       </Suspense>
-
-      {/* ISS */}
-      <ISS position={issPosition} />
-
-      {/* Connection lines in world space */}
-      <ConnectionLines
-        groundStations={groundStations}
-        issPosition={issPosition}
-        earthGroupRef={earthGroupRef}
-      />
 
       {/* Camera controls */}
       <OrbitControls
