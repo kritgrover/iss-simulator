@@ -271,6 +271,10 @@ class NetworkDTNManager(DTNBundleManager):
                 hops=[source_station]  # Start with source station, will be updated when ACK processed
             )
             self.bundles[bundle_id] = bundle
+            
+            # Save to DB
+            self.db_manager.save_bundle(bundle.to_dict())
+            
             print("📦 Bundle {} created at receiver {} (will be queued when ACK processed)".format(
                 bundle_id[:8], node_id
             ))
@@ -637,6 +641,10 @@ class NetworkDTNManager(DTNBundleManager):
                 
                 bundle = self.bundles[bundle_id]
                 bundle.status = BundleStatus.QUEUED  # Back to queue
+                
+                # Update DB
+                self.db_manager.update_bundle_status(bundle_id=bundle_id, status=BundleStatus.QUEUED.value)
+                
                 del self.active_transmissions[bundle_id]
                 continue
             
@@ -684,6 +692,13 @@ class NetworkDTNManager(DTNBundleManager):
                                 # Reset bundle status and prepare for retransmission
                                 bundle.status = BundleStatus.QUEUED
                                 bundle.forwarded_to = None
+                                
+                                # Update DB
+                                self.db_manager.update_bundle_status(
+                                    bundle_id=bundle_id,
+                                    status=BundleStatus.QUEUED.value,
+                                    forwarded_to=None
+                                )
                                 
                                 # Remove from active transmissions so it can be picked up again
                                 del self.active_transmissions[bundle_id]

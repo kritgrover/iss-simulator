@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from database import DatabaseManager
 
 class BundlePriority(str, Enum):
     EXPEDITED = "EXPEDITED"  # Red - high priority
@@ -153,10 +154,82 @@ class DTNBundleManager:
         self.bundle_retry_counts: Dict[str, int] = {}  # Track retry counts for bundles
         self.bundle_failure_reasons: Dict[str, str] = {}  # Track why bundles failed
         self.mesh_connections = mesh_connections or []  # List of (station1, station2) tuples
+        self.db_manager = DatabaseManager()
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
         print(f"   ACK timeout: {self.ACK_TIMEOUT_SECONDS}s, Max retries: {self.MAX_RETRIES}")
+        
+        # Load persistent state
+        self._load_state()
     
+    def _load_state(self):
+        """Load bundle state from database"""
+        saved_bundles = self.db_manager.get_all_bundles()
+        loaded_count = 0
+        
+        for bundle_data in saved_bundles:
+            try:
+                # Reconstruct bundle object
+                priority_enum = BundlePriority.NORMAL
+                if bundle_data['priority'] == "EXPEDITED":
+                    priority_enum = BundlePriority.EXPEDITED
+                elif bundle_data['priority'] == "BULK":
+                    priority_enum = BundlePriority.BULK
+                
+                # Parse timestamps
+                created_at = datetime.fromisoformat(bundle_data['created_at'])
+                delivered_at = datetime.fromisoformat(bundle_data['delivered_at']) if bundle_data.get('delivered_at') else None
+                
+                status_enum = BundleStatus.QUEUED
+                try:
+                    status_enum = BundleStatus(bundle_data['status'])
+                except ValueError:
+                    pass
+                
+                bundle = DTNBundle(
+                    bundle_id=bundle_data['bundle_id'],
+                    source_station=bundle_data['source_station'],
+                    destination_station=bundle_data['destination_station'],
+                    payload=bundle_data['payload'],
+                    priority=priority_enum,
+                    created_at=created_at,
+                    ttl_hours=bundle_data['ttl_hours'],
+                    status=status_enum,
+                    current_custodian=bundle_data['current_custodian'],
+                    forwarded_to=bundle_data['forwarded_to'],
+                    delivered_at=delivered_at,
+                    hops=bundle_data.get('hops', []),
+                    route=bundle_data.get('route', []),
+                    size_bytes=bundle_data.get('size_bytes', 0),
+                    checksum=bundle_data.get('checksum', 0)
+                )
+                
+                self.bundles[bundle.bundle_id] = bundle
+                
+                # Restore into appropriate queues/lists
+                if bundle.status == BundleStatus.DELIVERED:
+                    self.delivered_bundles.append(bundle.bundle_id)
+                elif bundle.status == BundleStatus.EXPIRED or bundle_data.get('failure_reason'):
+                    self.failed_bundles.append(bundle.bundle_id)
+                    if bundle_data.get('failure_reason'):
+                        self.bundle_failure_reasons[bundle.bundle_id] = bundle_data['failure_reason']
+                elif bundle.status in [BundleStatus.QUEUED, BundleStatus.WAITING_ACK]:
+                    # Add to custodian's queue
+                    custodian = bundle.current_custodian
+                    if custodian and custodian in self.station_queues:
+                        self.station_queues[custodian].append(bundle.bundle_id)
+                
+                loaded_count += 1
+            except Exception as e:
+                print(f"❌ Error loading bundle {bundle_data.get('bundle_id')}: {e}")
+        
+        # Sort queues
+        for station_id in self.station_queues:
+            self._sort_station_queue(station_id)
+            
+        if loaded_count > 0:
+            print(f"📦 Restored {loaded_count} bundles from persistent storage")
+
     def find_route(self, from_station: str, to_station: str, 
                    stations_data: List[Dict], visited: Optional[List[str]] = None) -> Optional[List[str]]:
         """
@@ -289,6 +362,9 @@ class DTNBundleManager:
         
         self._sort_station_queue(source_station)
         
+        # Save to DB
+        self.db_manager.save_bundle(bundle.to_dict())
+        
         # Log checksum calculation
         print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}... (size: {bundle.size_bytes} bytes, priority: {priority_enum.value})")
         print(f"   Checksum calculated: 0x{bundle.checksum:08x} (CRC32)")
@@ -374,6 +450,13 @@ class DTNBundleManager:
         bundle.status = BundleStatus.TRANSMITTING
         self.active_transmissions[bundle_id] = transmission
         
+        # Update DB
+        self.db_manager.update_bundle_status(
+            bundle_id=bundle_id,
+            status=BundleStatus.TRANSMITTING.value,
+            forwarded_to=to_station
+        )
+        
         # Clear retry count tracking (it's now in the transmission)
         if bundle_id in self.bundle_retry_counts:
             del self.bundle_retry_counts[bundle_id]
@@ -416,6 +499,8 @@ class DTNBundleManager:
                     print(f"   Progress: {transmission.progress_percent():.1f}% ({transmission.bytes_transmitted:.0f}/{transmission.size_bytes} bytes)")
                     print(f"   Will retry when contact restored (attempt {transmission.retransmission_count}/{transmission.max_retries})")
                     bundle.status = BundleStatus.QUEUED  # Back to queue
+                    # Update DB
+                    self.db_manager.update_bundle_status(bundle_id=bundle_id, status=BundleStatus.QUEUED.value)
                     # Store retry count for next attempt
                     self.bundle_retry_counts[bundle_id] = transmission.retransmission_count
                 else:
@@ -590,6 +675,15 @@ class DTNBundleManager:
             bundle.hops.append(from_station)
             bundle.forwarded_to = None
             
+            # Update DB
+            self.db_manager.update_bundle_status(
+                bundle_id=bundle_id,
+                status=BundleStatus.DELIVERED.value,
+                delivered_at=bundle.delivered_at.isoformat(),
+                forwarded_to=None
+            )
+            self.db_manager.update_bundle_hops(bundle_id, bundle.hops)
+            
             # Calculate total delivery time
             total_time = (bundle.delivered_at - bundle.created_at).total_seconds()
             
@@ -612,6 +706,15 @@ class DTNBundleManager:
             bundle.current_custodian = from_station
             bundle.hops.append(from_station)
             bundle.forwarded_to = None
+            
+            # Update DB
+            self.db_manager.update_bundle_status(
+                bundle_id=bundle_id,
+                status=BundleStatus.QUEUED.value,
+                current_custodian=from_station,
+                forwarded_to=None
+            )
+            self.db_manager.update_bundle_hops(bundle_id, bundle.hops)
             
             # Move from sender's queue to receiver's queue
             if bundle_id in self.station_queues[to_station]:
@@ -722,6 +825,13 @@ class DTNBundleManager:
             bundle.status = BundleStatus.QUEUED
             bundle.forwarded_to = None
             
+            # Update DB
+            self.db_manager.update_bundle_status(
+                bundle_id=bundle_id,
+                status=BundleStatus.QUEUED.value,
+                forwarded_to=None
+            )
+            
             print(f"🔄 Scheduling retransmission of {bundle_id[:8]} to {from_station}")
             return True
         else:
@@ -770,6 +880,14 @@ class DTNBundleManager:
                             bundle = self.bundles[bundle_id]
                             bundle.status = BundleStatus.QUEUED
                             bundle.forwarded_to = None
+                            
+                            # Update DB
+                            self.db_manager.update_bundle_status(
+                                bundle_id=bundle_id,
+                                status=BundleStatus.QUEUED.value,
+                                forwarded_to=None
+                            )
+                            
                             # Store retry count for when transmission starts
                             self.bundle_retry_counts[bundle_id] = retry_count
                         
@@ -810,6 +928,13 @@ class DTNBundleManager:
             if len(self.failed_bundles) > 50:
                 self.failed_bundles.pop(0)
         self.bundle_failure_reasons[bundle_id] = reason
+        
+        # Update DB
+        self.db_manager.update_bundle_status(
+            bundle_id=bundle_id,
+            status=BundleStatus.EXPIRED.value,
+            failure_reason=reason
+        )
     
     def get_failed_bundles(self) -> List[Dict]:
         """Get recently failed bundles for frontend"""
@@ -892,6 +1017,10 @@ class DTNBundleManager:
         for bundle_id, bundle in list(self.bundles.items()):
             if bundle.is_expired() and bundle.status != BundleStatus.DELIVERED:
                 bundle.status = BundleStatus.EXPIRED
+                
+                # Update DB
+                self.db_manager.update_bundle_status(bundle_id=bundle_id, status=BundleStatus.EXPIRED.value)
+                
                 # Remove from station queue
                 for queue in self.station_queues.values():
                     if bundle_id in queue:
