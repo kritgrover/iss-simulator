@@ -1,5 +1,4 @@
 # ISS Communication Simulator
-# ISS Communication Simulator
 
 ## Introduction
 
