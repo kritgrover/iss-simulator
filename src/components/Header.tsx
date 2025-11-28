@@ -1,5 +1,6 @@
 import { Circle, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useMET } from "@/hooks/useMET";
 
 interface HeaderProps {
   isConnected: boolean;
@@ -7,6 +8,8 @@ interface HeaderProps {
 }
 
 const Header = ({ isConnected, connectionError }: HeaderProps) => {
+  const met = useMET();
+
   return (
     <header className="h-14 border-b border-border bg-panel px-6 flex items-center justify-between">
       <div className="flex items-center gap-8">
@@ -14,7 +17,7 @@ const Header = ({ isConnected, connectionError }: HeaderProps) => {
           ISS COMMUNICATION SIMULATOR
         </h1>
         <div className="flex items-center gap-4 text-xs font-mono text-secondary">
-          <span>MET: 024:15:42:18</span>
+          <span>MET: {met}</span>
         </div>
       </div>
       

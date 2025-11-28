@@ -306,26 +306,6 @@ const GlobeView = ({
           </div>
         )}
       </div>
-
-      {/* Bottom Controls */}
-      <div className="px-4 py-3 border-t border-border bg-[#0f1729] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" className="h-8">
-            <Play className="h-3 w-3 mr-1" />
-            <span className="text-xs">Play</span>
-          </Button>
-          <Button variant="outline" size="sm" className="h-8">
-            <Pause className="h-3 w-3 mr-1" />
-            <span className="text-xs">Pause</span>
-          </Button>
-        </div>
-        <div className="flex items-center gap-4 text-xs font-mono text-secondary">
-          <div className="flex items-center gap-2">
-            <Clock className="h-3 w-3" />
-            <span>UTC {formatTime(orbitalData?.timestamp)}</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
