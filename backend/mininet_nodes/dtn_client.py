@@ -3,7 +3,6 @@
 DTN Client for Mininet Nodes
 
 Client utility to send DTN bundles over the network.
-Can be used for testing or manual bundle transmission.
 """
 
 import socket
@@ -13,14 +12,12 @@ import sys
 import os
 import zlib
 
-# Add parent directory to path to import DTN modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 DTN_PORT = 5000
 
 
 def calculate_checksum(payload: str) -> int:
-    """Calculate CRC32 checksum"""
     data = payload.encode('utf-8')
     return zlib.crc32(data) & 0xffffffff
 
@@ -45,7 +42,6 @@ def send_message(sock: socket.socket, message: dict) -> bool:
 def receive_message(sock: socket.socket) -> dict:
     """Receive a message from socket"""
     try:
-        # Read message length (4 bytes)
         length_data = sock.recv(4)
         if len(length_data) < 4:
             return None
@@ -89,12 +85,10 @@ def send_bundle(dest_ip: str, dest_port: int, bundle_id: str, source_station: st
         # Calculate checksum
         checksum = calculate_checksum(payload)
         
-        # Create socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(30.0)
         sock.connect((dest_ip, dest_port))
         
-        # Prepare bundle message
         bundle_message = {
             'type': 'bundle',
             'bundle': {

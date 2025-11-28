@@ -45,13 +45,11 @@ class NetworkDTNManager(DTNBundleManager):
         
         super().__init__(stations, mesh_connections=mesh_connections)
         self.topology = topology
-        self.servers = {}  # node_id -> server socket
-        self.server_threads = {}  # node_id -> thread
+        self.servers = {} 
+        self.server_threads = {} 
         self.running = False
-        self.message_handlers = {}  # node_id -> handler function
-        
-        # Track active connections
-        self.connections = {}  # (from_node, to_node) -> socket
+        self.message_handlers = {} 
+        self.connections = {} 
         
         print("🌐 NetworkDTNManager initialized")
     
@@ -66,7 +64,6 @@ class NetworkDTNManager(DTNBundleManager):
         
         self.running = True
         
-        # Get the path to dtn_server.py
         import os
         script_dir = os.path.dirname(os.path.abspath(__file__))
         dtn_server_script = os.path.join(script_dir, 'mininet_nodes', 'dtn_server.py')
@@ -130,7 +127,6 @@ class NetworkDTNManager(DTNBundleManager):
         
         try:
             # Run the server script within the node's namespace
-            # Use popen to run it in background
             import os
             cmd = 'python3 {} {}'.format(server_script, node_id)
             proc = node.popen(cmd, shell=True)
@@ -161,7 +157,6 @@ class NetworkDTNManager(DTNBundleManager):
     def _receive_message(self, sock: socket.socket) -> Optional[Dict]:
         """Receive a message from socket"""
         try:
-            # Read message length (4 bytes)
             length_data = sock.recv(4)
             if len(length_data) < 4:
                 return None
@@ -248,10 +243,7 @@ class NetworkDTNManager(DTNBundleManager):
         
         # Checksum valid - create bundle object at receiver if it doesn't exist
         # Bundle will be added to receiver's queue when ACK is processed at sender side
-        # Note: In most cases, bundle should already exist (created at sender), but we create it
-        # here if it doesn't exist (e.g., if sender's bundle manager was reset)
         if bundle_id not in self.bundles:
-            # Create bundle object at receiver
             from dtn_bundle_manager import DTNBundle, BundlePriority
             priority_enum = BundlePriority.NORMAL
             if priority.upper() == "EXPEDITED":
@@ -267,7 +259,7 @@ class NetworkDTNManager(DTNBundleManager):
                 priority=priority_enum,
                 created_at=datetime.now(timezone.utc),
                 ttl_hours=24,  # Default TTL
-                current_custodian=node_id,  # Receiver becomes custodian when bundle is received
+                current_custodian=node_id,  
                 hops=[source_station]  # Start with source station, will be updated when ACK processed
             )
             self.bundles[bundle_id] = bundle
@@ -368,13 +360,11 @@ class NetworkDTNManager(DTNBundleManager):
             print("❌ Topology not set, cannot send bundle")
             return False
         
-        # Handle ISS node name (case-insensitive)
         node_id_for_lookup = to_node.lower() if to_node.lower() == 'iss' else to_node
         
         dest_ip = self.topology.get_node_ip(node_id_for_lookup)
         if not dest_ip:
             print("❌ Cannot find IP for node {} (looked up as: {})".format(to_node, node_id_for_lookup))
-            # Debug: Check if node exists
             node = self.topology.get_node(node_id_for_lookup)
             if node:
                 print("   Node exists but IP() returned None - network may not be fully started")
@@ -382,21 +372,17 @@ class NetworkDTNManager(DTNBundleManager):
                 print("   Node does not exist in topology")
             return False
         
-        # Extract IP address (remove /24 subnet)
         dest_ip = dest_ip.split('/')[0]
         
-        # Get source node to run client from its namespace
         source_node = self.topology.get_node(from_node)
         if not source_node:
             print("❌ Source node {} not found in topology".format(from_node))
             return False
         
-        # Get path to client script
         import os
         script_dir = os.path.dirname(os.path.abspath(__file__))
         client_script = os.path.join(script_dir, 'mininet_nodes', 'dtn_client.py')
         
-        # Escape payload for shell (handle quotes and special chars)
         import shlex
         payload_escaped = shlex.quote(bundle.payload)
         
@@ -435,24 +421,23 @@ class NetworkDTNManager(DTNBundleManager):
                 self._handle_ack_received(to_node, ack_data)
                 return True
             
-            # Check for failure indicators and extract detailed error information
+            # Check for failure indicators
             elif '❌' in result or 'nak received' in result_lower or 'error' in result_lower:
-                # Categorize failure type
                 failure_category = None
                 error_reason = 'unknown'
                 error_details = []
                 
-                # Check for checksum failure (highest priority - explicit NAK)
+                # Check for checksum failure
                 if 'checksum' in result_lower and 'mismatch' in result_lower:
                     failure_category = 'checksum_fail'
                     error_reason = 'checksum_mismatch'
                     error_details.append("Checksum verification failed at receiver")
                 elif 'nak received' in result_lower:
-                    failure_category = 'checksum_fail'  # NAK usually means checksum failure
+                    failure_category = 'checksum_fail'  
                     error_reason = 'nak_received'
                     error_details.append("NAK received from receiver (likely checksum mismatch)")
                 
-                # Check for link down (connection issues)
+                # Check for link down
                 elif 'connection refused' in result_lower or 'connectionrefusederror' in result_lower:
                     failure_category = 'link_down'
                     error_reason = 'connection_refused'
@@ -468,28 +453,27 @@ class NetworkDTNManager(DTNBundleManager):
                     error_reason = 'timeout'
                     error_details.append("Timeout - connection or operation timed out (30s)")
                 
-                # Check for bundle lost (no response, empty output, etc.)
+                # Check for bundle lost
                 elif not result or len(result.strip()) == 0:
                     failure_category = 'bundle_lost'
                     error_reason = 'no_response'
                     error_details.append("Bundle lost - no response from receiver (possible packet loss)")
                 else:
-                    # Generic error - could be bundle lost or other issue
+                    # Generic error
                     failure_category = 'bundle_lost'
                     error_reason = 'transmission_error'
                     error_details.append("Bundle lost or transmission error occurred")
                 
-                # Log detailed failure information with category
+                # Log detailed failure information
                 print("❌ Transmission FAILED for bundle {}: {}".format(bundle_id[:8], failure_category.upper().replace('_', ' ')))
                 print("   Reason: {}".format(error_reason))
                 if error_details:
                     for detail in error_details:
                         print("   → {}".format(detail))
-                # Also print the raw output for debugging (truncated)
                 if result.strip():
                     print("   Raw output: {}".format(result.strip()[:200]))
                 
-                # Store failure reason for later reference
+                # Store failure reason
                 if hasattr(self, '_network_send_status') and bundle_id in self._network_send_status:
                     self._network_send_status[bundle_id]['failure_reason'] = failure_category
                 
@@ -517,20 +501,16 @@ class NetworkDTNManager(DTNBundleManager):
                 
                 return False
             
-            # If we got here, couldn't parse result but command completed
-            # This is suspicious - log warning but assume success for now
             print("⚠️  Could not parse client output for bundle {}, assuming success".format(bundle_id[:8]))
             print("   Output: {}".format(result.strip()[:200]))
             return True
                 
         except Exception as e:
-            # Capture exception details and categorize failure
             error_type = type(e).__name__
             error_msg = str(e)
             error_msg_lower = error_msg.lower()
             
-            # Categorize exception-based failures
-            failure_category = 'bundle_lost'  # Default to bundle lost for exceptions
+            failure_category = 'bundle_lost'  
             if 'timeout' in error_msg_lower or 'timed out' in error_msg_lower:
                 failure_category = 'timeout'
             elif 'connection' in error_msg_lower or 'refused' in error_msg_lower:
@@ -559,22 +539,19 @@ class NetworkDTNManager(DTNBundleManager):
         
         This extends the parent method to actually send over network
         """
-        # Call parent to create transmission record
         transmission = super().start_transmission(
             bundle_id, from_station, to_station, data_rate_bps, retransmission_count
         )
         
         if transmission:
-            # Create pending acknowledgment for timeout handling
-            # In mininet, ACK comes back through network, but we need pending_ack for timeout tracking
             bundle = self.bundles.get(bundle_id)
             if bundle:
                 from dtn_bundle_manager import PendingAcknowledgment
                 now = datetime.now(timezone.utc)
                 pending_ack = PendingAcknowledgment(
                     bundle_id=bundle_id,
-                    from_station=from_station,  # Current custodian (sender)
-                    to_station=to_station,  # Destination
+                    from_station=from_station,  
+                    to_station=to_station,  
                     transmitted_at=now,
                     timeout_seconds=self.ACK_TIMEOUT_SECONDS,
                     retransmission_count=retransmission_count or 0,
@@ -586,14 +563,13 @@ class NetworkDTNManager(DTNBundleManager):
             
             # Track network send status
             if not hasattr(self, '_network_send_status'):
-                self._network_send_status = {}  # bundle_id -> (success: bool, completed: bool, failure_reason: str)
+                self._network_send_status = {}  
             
             # Initialize status as pending
             self._network_send_status[bundle_id] = {'success': False, 'completed': False, 'failure_reason': None}
             
             # Send bundle over network in background thread
             def send_thread():
-                # Simulate transmission time based on data rate
                 transmission_time = transmission.size_bytes / (data_rate_bps / 8)
                 time.sleep(transmission_time)
                 
@@ -609,11 +585,8 @@ class NetworkDTNManager(DTNBundleManager):
                 }
                 
                 if success:
-                    # Mark as complete
                     transmission.bytes_transmitted = transmission.size_bytes
                 else:
-                    # Transmission failed - failure reason already logged in send_bundle_over_network
-                    # Don't mark bytes as transmitted so it won't be marked as complete
                     pass
             
             thread = threading.Thread(target=send_thread)
@@ -629,7 +602,6 @@ class NetworkDTNManager(DTNBundleManager):
         completed = []
         
         for bundle_id, transmission in list(self.active_transmissions.items()):
-            # Check if contact is maintained (for ISS transmissions)
             from_station = transmission.from_station
             is_contact_maintained = station_contact_states.get(from_station, False)
             
@@ -662,7 +634,6 @@ class NetworkDTNManager(DTNBundleManager):
                     status = self._network_send_status.get(bundle_id, {'completed': False, 'success': False, 'failure_reason': None})
                     
                     if status['completed'] and status['success']:
-                        # Network send succeeded - transmission is really complete
                         elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
                         print(f"✅ Transmission COMPLETE: {bundle_id[:8]}")
                         print(f"   Route: {transmission.from_station} → {transmission.to_station}")
@@ -673,14 +644,11 @@ class NetworkDTNManager(DTNBundleManager):
                         completed.append((bundle_id, transmission.data_rate_bps))
                         del self.active_transmissions[bundle_id]
                     elif status['completed'] and not status['success']:
-                        # Network send failed - prepare for retransmission
-                        # Failure reason already logged in send_bundle_over_network
                         failure_reason = status.get('failure_reason', 'unknown')
                         bundle = self.bundles.get(bundle_id)
                         transmission = self.active_transmissions.get(bundle_id)
                         
                         if bundle and transmission:
-                            # Increment retry count
                             transmission.retransmission_count += 1
                             retry_count = transmission.retransmission_count
                             
@@ -736,11 +704,8 @@ class NetworkDTNManager(DTNBundleManager):
                                 if bundle_id in self.station_queues.get(transmission.from_station, []):
                                     self.station_queues[transmission.from_station].remove(bundle_id)
                     else:
-                        # Network send still in progress - wait for it
-                        # Don't mark as complete yet
                         pass
                 else:
-                    # No network send status tracking - use parent behavior
                     elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
                     print(f"✅ Transmission COMPLETE: {bundle_id[:8]}")
                     print(f"   Route: {transmission.from_station} → {transmission.to_station}")

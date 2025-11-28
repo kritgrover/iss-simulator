@@ -43,7 +43,7 @@ class ISSTopology:
     # Base ISS link parameters (will be updated dynamically)
     ISS_BASE_BANDWIDTH_MBPS = 0.2  # 200 kbps
     ISS_BASE_DELAY_MS = 10  # 10ms base delay
-    ISS_BASE_LOSS_PERCENT = 20 # 20% base packet loss
+    ISS_BASE_LOSS_PERCENT = 40 # 40% base packet loss
     
     def __init__(self, ground_stations: List[Dict]):
         """
@@ -105,9 +105,7 @@ class ISSTopology:
         info("🔨 Building Mininet topology...\n")
         
         # Create network - use OVSSwitch in standalone mode (no controller needed)
-        # OVS can work as a simple L2 switch without OpenFlow controller
         try:
-            # Create network without controller - OVS will work in standalone mode
             self.net = Mininet(controller=None, link=TCLink, switch=OVSSwitch)
             info("📡 Using OVS switch in standalone mode (no controller required)\n")
         except Exception as e1:
@@ -161,9 +159,7 @@ class ISSTopology:
         # Configure OVS switch to work in standalone mode (no controller)
         if self.switch and hasattr(self.switch, 'cmd'):
             try:
-                # Set switch to fail-mode=standalone (no controller needed)
                 self.switch.cmd('ovs-vsctl set-fail-mode', self.switch.name, 'standalone')
-                # Remove any existing controller connections
                 self.switch.cmd('ovs-vsctl del-controller', self.switch.name)
                 info("✅ Configured {} to run in standalone mode\n".format(self.switch.name))
             except Exception as e:
@@ -200,9 +196,6 @@ class ISSTopology:
         """
         Create or update ISS link to a ground station
         
-        Note: In Mininet, all links are created at build time.
-        This method updates link parameters using tc commands.
-        
         Args:
             station_id: Ground station ID
             bandwidth_mbps: Link bandwidth in Mbps
@@ -228,7 +221,7 @@ class ISSTopology:
             self.update_iss_link(station_id, bandwidth_mbps, delay_ms, loss_percent)
             return
         
-        # Store link info (links are created at build time, we just track them)
+        # Store link info
         self.iss_links[station_id] = {
             'bandwidth_mbps': bandwidth_mbps,
             'delay_ms': delay_ms,
@@ -256,7 +249,7 @@ class ISSTopology:
             log_update: Whether to log the update (default: True)
         """
         if not self.net or not hasattr(self.net, 'running') or not self.net.running:
-            # Network not running, can't apply parameters
+            # Network not running
             return
         
         if station_id not in self.iss_links:
@@ -298,12 +291,10 @@ class ISSTopology:
             return
 
         # Find links to the switch
-        # Note: In our star topology, both connect to the switch
         station_links = self.net.linksBetween(station_node, self.switch)
         iss_links = self.net.linksBetween(self.iss_node, self.switch)
         
         if not station_links or not iss_links:
-            # This can happen if links aren't established yet
             return
         
         station_link = station_links[0]

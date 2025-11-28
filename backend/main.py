@@ -244,12 +244,10 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 bundle = dtn_manager.bundles.get(bundle_id)
                 if bundle:
                     # Receiver verifies checksum and generates ACK/NAK
-                    # Note: complete_transmission simulates receiver-side processing
                     ack_or_nak = dtn_manager.complete_transmission(bundle_id, data_rate_bps)
                     
                     if ack_or_nak:
                         # Create pending acknowledgment on sender side
-                        # This tracks that we're waiting for ACK/NAK (supports timeout logic)
                         from_station = bundle.current_custodian
                         to_station = bundle.forwarded_to if bundle.forwarded_to else "unknown"
                         
@@ -268,16 +266,12 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         dtn_manager.pending_acknowledgments[bundle_id] = pending_ack
                         bundle.status = BundleStatus.WAITING_ACK
                         
-                        # Immediately process ACK/NAK at sender (simulate instant delivery)
-                        # In real system, ACK/NAK would travel over the network with potential delays
                         if ack_or_nak.get("type") == "ack":
                             # Process ACK at sender - removes bundle from queue and pending_ack
                             dtn_manager.process_ack(bundle_id, ack_or_nak)
                         elif ack_or_nak.get("type") == "nak":
                             # Process NAK at sender - will update retry count and schedule retransmission
                             dtn_manager.process_nak(bundle_id, ack_or_nak)
-                            # If retransmission is needed, bundle status is set to QUEUED
-                            # and will be picked up in the transmission logic below
             
             # Check for timeouts in pending acknowledgments
             retransmitted_bundles_info = dtn_manager.check_timeouts(station_contact_states)
@@ -294,12 +288,10 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     # Backward compatibility
                     retransmitted_bundle_ids.append(retrans_info)
             
-            # Note: Retransmitted bundles are now in QUEUED status and will be picked up below
-            
             # Process DTN bundles - start new transmissions or forward
             for station_data in stations_data:
                 station_id = station_data["id"]
-                is_visible = station_data["is_visible"]  # This station's visibility
+                is_visible = station_data["is_visible"]  
                 
                 # Get station's queue
                 queue = dtn_manager.station_queues.get(station_id, [])
@@ -323,12 +315,11 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     continue  # Already transmitting or waiting for ACK, don't start another
                 
                 # Queue is now pre-sorted by priority in dtn_bundle_manager
-                # So we can just take the first bundle - it's guaranteed to be highest priority
                 next_bundle_id = queue[0]
                 next_bundle = dtn_manager.bundles.get(next_bundle_id)
                 
                 if not next_bundle:
-                    continue  # Bundle doesn't exist (shouldn't happen)
+                    continue  # Bundle doesn't exist
                 
                 # Check bundle destination first
                 bundle_destination = next_bundle.destination_station
@@ -353,15 +344,12 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     # Only transmit if link is up and data rate is available
                     if data_rate_bps > 0 and connection_state != "IDLE":
                         # Check if this is a retransmission
-                        # Check if this is a retransmission (from timeout or NAK)
-                        retry_count = None  # None means use stored value or 0
+                        retry_count = None  
                         if next_bundle_id in retransmission_map:
                             retry_count, stored_data_rate = retransmission_map[next_bundle_id]
-                            # Use stored data rate if available, otherwise use calculated one
                             if stored_data_rate > 0:
                                 data_rate_bps = stored_data_rate
                         
-                        # start_transmission will get retry_count from bundle_retry_counts if None
                         retry_msg = ""
                         if retry_count is not None and retry_count > 0:
                             retry_msg = f" (retry {retry_count + 1})"
@@ -381,14 +369,11 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         continue  # Skip forwarding logic, bundle is being sent to ISS
                 
                 # Case 2: Bundle destination is a ground station OR this station can't see ISS
-                # Forward to appropriate ground station
                 if bundle_destination.upper() != "ISS" or not is_visible:
                     # Check if bundle has a route - if so, use it for forwarding
                     next_hop_from_route = dtn_manager.get_next_hop_from_route(next_bundle_id)
                     
                     if next_hop_from_route:
-                        # Use route-based forwarding
-                        # Check if this is a retransmission
                         retry_count = None
                         if next_bundle_id in retransmission_map:
                             retry_count, stored_data_rate = retransmission_map[next_bundle_id]
@@ -410,9 +395,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         continue  # Don't check for other forwarding options
                     
                     # No route exists - calculate one if we have mesh connections
-                    # Find route to final destination (ISS or ground station)
                     if not next_bundle.route or len(next_bundle.route) == 0:
-                        # Determine final destination: use bundle destination if it's a ground station, otherwise ISS
                         final_destination = bundle_destination if bundle_destination.upper() != "ISS" else "ISS"
                         route = dtn_manager.find_route(
                             station_id,
@@ -450,7 +433,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                 continue
                     
                     # Fallback: Original forwarding logic (if no route found)
-                    # First check: Is there a station that can see ISS RIGHT NOW?
                     active_station_has_link = False
                     if current_active_station:
                         active_station_data = next(
@@ -496,8 +478,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             continue
                     
                     # Second check: Look for stations with upcoming passes
-                    # Only do this if current station is NOT currently tracking ISS
-                    # (if it is tracking, next_pass_minutes refers to the NEXT pass after current one ends)
                     if not is_visible:
                         current_station_next_pass = station_data["next_pass_minutes"]
                         
@@ -616,12 +596,10 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     "data_rate_kbps": 0.0,
                 }
             
-            # NEW: Calculate link budgets for ALL VISIBLE stations
+            # Calculate link budgets for ALL VISIBLE stations
             visible_links = []
-            # Check if we should log link updates (every 5 seconds)
             should_log_link_updates = USE_MININET and topology and link_param_manager and (now - last_link_log_time).total_seconds() >= 5.0
             
-            # Track which stations we've updated this iteration
             updated_stations = set()
             
             for station_data in stations_data:
@@ -659,7 +637,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         updated_stations.add(station_data["id"])
             
             # Update non-visible stations to minimal link parameters
-            # This ensures links are properly simulated even when stations can't see ISS
             if USE_MININET and topology and link_param_manager:
                 for station_data in stations_data:
                     station_id = station_data["id"]

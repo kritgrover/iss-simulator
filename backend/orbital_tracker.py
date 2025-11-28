@@ -14,7 +14,6 @@ class OrbitalTracker:
         self.satellite = EarthSatellite(line1, line2, name, self.ts)
         
         # Cache for pass predictions to avoid heavy recalculation
-        # Key: (lat, lon, min_el) -> Value: (calc_time, result)
         self._pass_cache = {}
         
         print(f"🛰️  Initialized tracker for: {name}")
@@ -113,16 +112,12 @@ class OrbitalTracker:
         
         # Unit vector pointing from ground station to satellite
         range_unit_vector = position_km / range_km
-        
-        # Radial velocity = dot product of velocity with range unit vector
-        # Positive = satellite moving away from station (receding)
-        # Negative = satellite moving toward station (approaching)
         radial_velocity = float(np.dot(velocity_km_s, range_unit_vector))
         
         return {
-            "radial_velocity_kmps": radial_velocity,  # This is the TRUE radial velocity
+            "radial_velocity_kmps": radial_velocity,  
             "range_km": float(range_km),
-            "range_rate_kmps": radial_velocity  # Same as radial velocity
+            "range_rate_kmps": radial_velocity  
         }
     
     def predict_next_pass(self, ground_lat: float, ground_lon: float, 
@@ -141,7 +136,6 @@ class OrbitalTracker:
             
             # Reuse cache if less than 60 seconds old
             if age_seconds < 60:
-                # Update minutes_until based on elapsed time
                 minutes_elapsed = age_seconds / 60.0
                 updated_result = cached_result.copy()
                 if updated_result["minutes_until"] != -1:
@@ -150,9 +144,7 @@ class OrbitalTracker:
         
         t_start = self.ts.now()
         ground_station = wgs84.latlon(ground_lat, ground_lon)
-        
-        # ... calculation ...
-        
+                
         # Helper to store result in cache and return
         def cache_and_return(result):
             self._pass_cache[cache_key] = (now_dt, result)
@@ -167,7 +159,6 @@ class OrbitalTracker:
         # If currently visible, skip ahead to find LOS first, then next AOS
         start_offset_minutes = 0
         if currently_visible:
-            # Find when satellite sets (LOS)
             for minutes_ahead in range(1, 30):
                 t_future = self._add_minutes_to_time(t_start, minutes_ahead)
                 topo_future = difference.at(t_future)
@@ -182,7 +173,6 @@ class OrbitalTracker:
         for minutes_ahead in range(start_offset_minutes, max_hours * 60, 1):
             t_check = self._add_minutes_to_time(t_start, minutes_ahead)
             
-            # Check current minute
             topo_check = difference.at(t_check)
             alt_check, az_check, dist_check = topo_check.altaz()
             
@@ -242,7 +232,6 @@ class OrbitalTracker:
             alt_past, _, _ = topocentric_past.altaz()
             
             if alt_past.degrees <= min_elevation:
-                # Found AOS - it's between this minute and the next
                 aos_time = self._add_minutes_to_time(t_now, -minutes_back + 1)
                 break
         
@@ -254,11 +243,9 @@ class OrbitalTracker:
             alt_future, _, _ = topocentric_future.altaz()
             
             if alt_future.degrees <= min_elevation:
-                # Found LOS
                 los_time = t_future
                 break
         
-        # Calculate duration
         duration_minutes = 0
         if aos_time is not None and los_time is not None:
             aos_dt = aos_time.utc_datetime()
@@ -276,16 +263,12 @@ class OrbitalTracker:
                                opening_angle: float = 70, segments: int = 32) -> Dict:
         """Generate 3D cone vertices for ground station coverage"""
         
-        # Check if ISS is in view
         look_angles = self.calculate_look_angles(ground_lat, ground_lon)
         
-        # Cone geometry (simplified for visualization)
         vertices = []
         
-        # Apex at ground station
         apex = {"lat": float(ground_lat), "lon": float(ground_lon), "alt": 0.0}
         
-        # Generate circle at top of cone
         for i in range(segments):
             angle = (2 * np.pi * i) / segments
             lat_offset = (opening_angle / 2) * np.cos(angle) / 111

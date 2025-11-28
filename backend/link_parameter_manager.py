@@ -46,27 +46,22 @@ class LinkParameterManager:
         """
         if snr_db < 0:
             # Very poor signal - high packet loss
-            # Map linearly from 0 dB -> 30% to -10 dB -> 50%
             loss = 30.0 + (abs(snr_db) / 10.0) * 20.0
             return min(loss, self.MAX_LOSS_PERCENT)
         elif snr_db < 3:
             # Poor signal - high loss
-            # Map from 0 dB -> 30% to 3 dB -> 10%
             loss = 30.0 - (snr_db / 3.0) * 20.0
             return max(loss, 10.0)
         elif snr_db < 6:
             # Moderate signal - moderate loss
-            # Map from 3 dB -> 10% to 6 dB -> 5%
             loss = 10.0 - ((snr_db - 3.0) / 3.0) * 5.0
             return max(loss, 5.0)
         elif snr_db < 10:
             # Good signal - low loss
-            # Map from 6 dB -> 5% to 10 dB -> 1%
             loss = 5.0 - ((snr_db - 6.0) / 4.0) * 4.0
             return max(loss, 1.0)
         else:
             # Excellent signal - very low loss
-            # Map from 10 dB -> 1% to 20 dB -> 0.1%
             if snr_db >= 20:
                 return 0.1
             loss = 1.0 - ((snr_db - 10.0) / 10.0) * 0.9
@@ -198,6 +193,6 @@ class LinkParameterManager:
         return {
             "bandwidth_mbps": 100.0,  # 100 Mbps
             "delay_ms": 50.0,  # 50ms base delay
-            "loss_percent": 0.01,  # 0.01% packet loss
+            "loss_percent": 5.0,  # 5% packet loss
             "jitter_ms": 2.0  # 2ms jitter
         }
