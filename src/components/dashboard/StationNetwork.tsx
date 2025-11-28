@@ -129,7 +129,7 @@ const StationNetwork = ({
           const isHighlighted = highlightStation === station.id;
           const isSelected = selectedStationId === station.id;
           
-          // NEW: Check if this station is currently tracking (not just highest elevation)
+          // Check if this station is currently tracking
           const isTracking = station.isActive; // This is set from backend's is_visible
 
           return (
@@ -140,12 +140,12 @@ const StationNetwork = ({
                   ? 'border-amber-500 bg-amber-500/20 shadow-lg animate-pulse'
                   : isSelected
                   ? 'border-primary bg-primary/10'
-                  : isTracking // CHANGED: Use isTracking instead of just activeStationId match
+                  : isTracking
                   ? 'border-primary/50 bg-primary/5'
                   : 'border-border hover:border-border/60 hover:bg-muted/50'
               }`}
             >
-              {/* Handoff Indicator Banner - only for THE active station */}
+              {/* Handoff Indicator Banner */}
               {isHighlighted && (
                 <div className="flex items-center gap-2 bg-amber-500/30 px-2 py-1 border-b border-amber-500/50">
                   <Zap className="w-3 h-3 text-amber-500 animate-pulse" />
@@ -164,7 +164,7 @@ const StationNetwork = ({
                 </div>
               )}
 
-              {/* NEW: Tracking Indicator for all visible stations */}
+              {/* Tracking Indicator */}
               {isTracking && !isHighlighted && !isSelected && (
                 <div className="flex items-center gap-2 bg-success/20 px-2 py-1 border-b border-success/50">
                   <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />

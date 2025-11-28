@@ -21,7 +21,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
   const dopplerShift = linkStatus?.doppler_shift_khz ?? 0;
   const snr = linkStatus?.snr_db ?? -50;
 
-  // Calculate signal strength percentage (scale: -120 dBm to -40 dBm)
+  // Calculate signal strength percentage
   const signalPercent = Math.max(0, Math.min(100, ((signalStrength + 120) / 80) * 100));
 
   // Signal quality assessment
@@ -36,11 +36,9 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
 
   const signalQuality = getSignalQuality();
   const SignalIcon = signalQuality.icon;
-
-  // Determine if approaching or receding
   const isApproaching = dopplerShift < 0;
   
-  // Doppler shift bar position (scale: -10 kHz to +10 kHz)
+  // Doppler shift bar position
   const dopplerPercent = Math.max(0, Math.min(100, ((dopplerShift + 10) / 20) * 100));
 
   // Connection state colors
@@ -127,7 +125,6 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
 
         {/* Doppler Frequency Spectrum */}
         <div className="relative h-12 bg-background/50 rounded border border-border overflow-hidden">
-          {/* Background gradient */}
           <div 
             className="absolute inset-0 opacity-20"
             style={{
@@ -144,7 +141,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
             <span>+10</span>
           </div>
 
-          {/* Center line (0 Hz reference) */}
+          {/* Center line*/}
           <div className="absolute left-1/2 top-0 bottom-0 w-px bg-secondary/30" />
 
           {/* Doppler indicator bar */}

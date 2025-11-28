@@ -2,13 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
-    /* NASA Mission Control Theme - Deep Navy Base */
     --background: 230 55% 9%;          /* #0a0e27 - Deep navy background */
     --foreground: 0 0% 91%;            /* #E8E8E8 - Light gray text */
 
@@ -21,35 +16,35 @@ All colors MUST be HSL.
     --popover: 230 45% 16%;
     --popover-foreground: 0 0% 91%;
 
-    --primary: 207 71% 58%;            /* #4A90E2 - Accent blue */
+    --primary: 207 71% 58%;            
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 66%;          /* #9CA3AF - Secondary gray text */
+    --secondary: 220 14% 66%;          
     --secondary-foreground: 0 0% 91%;
 
-    --muted: 210 25% 24%;              /* #2D3748 - Border color */
+    --muted: 210 25% 24%;              
     --muted-foreground: 220 14% 66%;
 
-    --accent: 207 71% 58%;             /* Blue accent */
+    --accent: 207 71% 58%;             
     --accent-foreground: 0 0% 100%;
 
-    --success: 122 39% 49%;            /* #4CAF50 - Green for positive */
+    --success: 122 39% 49%;            
     --success-foreground: 0 0% 100%;
 
-    --warning: 36 100% 50%;            /* #FF9800 - Orange for warnings */
+    --warning: 36 100% 50%;            
     --warning-foreground: 0 0% 100%;
 
-    --destructive: 4 79% 56%;          /* #E53935 - Red for critical */
+    --destructive: 4 79% 56%;          
     --destructive-foreground: 0 0% 100%;
 
-    --border: 210 25% 24%;             /* #2D3748 */
+    --border: 210 25% 24%;             
     --input: 210 25% 24%;
     --ring: 207 71% 58%;
 
-    --radius: 0rem;                    /* No rounded corners */
+    --radius: 0rem;
 
-    --terminal-bg: 0 0% 0%;            /* Black terminal background */
-    --terminal-text: 120 100% 40%;     /* Green terminal text */
+    --terminal-bg: 0 0% 0%;            
+    --terminal-text: 120 100% 40%;     
   }
 }
 

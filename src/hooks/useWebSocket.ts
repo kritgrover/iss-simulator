@@ -39,7 +39,6 @@ export const useWebSocket = (url: string): UseWebSocketReturn => {
             
             // Log different message types
             if (data.type === 'orbital_update') {
-              // Don't log every update (too verbose)
             } else {
               console.log('📨 Received:', data.type);
             }

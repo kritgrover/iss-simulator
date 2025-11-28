@@ -2,7 +2,7 @@
 
 This project uses Mininet for network simulation. Mininet requires Linux, so on Windows you'll need to use WSL2 or Docker.
 
-## Option 1: WSL2 (Recommended for Windows)
+## WSL2 (Recommended for Windows)
 
 ### Prerequisites
 - Windows 10/11 with WSL2 installed

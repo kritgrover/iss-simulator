@@ -30,7 +30,6 @@ def calculate_checksum(payload: str) -> int:
 def receive_message(sock: socket.socket) -> dict:
     """Receive a message from socket"""
     try:
-        # Read message length (4 bytes)
         length_data = sock.recv(4)
         if len(length_data) < 4:
             return None

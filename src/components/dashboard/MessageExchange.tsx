@@ -109,11 +109,10 @@ const MessageExchange = ({
     }
   }, [mode, stationQueue, messages]);
 
-  // NEW: Process custody ACKs
+  // Process custody ACKs
   useEffect(() => {
     if (custodyAcks && custodyAcks.length > 0) {
       custodyAcks.forEach(ack => {
-        // Only show ACK if it's relevant to currently displayed stations
         const ackText = ack.ack_type === "delivered"
           ? `◀ ACK: Bundle ${ack.bundle_id_short} delivered to ${ack.from_station.toUpperCase()}`
           : `◀ ACK: ${ack.from_station.toUpperCase()} accepted custody of ${ack.bundle_id_short}`;
@@ -343,7 +342,7 @@ const MessageExchange = ({
           </div>
         </div>
 
-        {/* Message Log - DOUBLED IN SIZE */}
+        {/* Message Log */}
         <div className="flex-1 terminal p-3 overflow-y-auto space-y-2 mb-3">
           {messages.map((msg, idx) => (
             <div 

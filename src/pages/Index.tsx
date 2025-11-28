@@ -19,12 +19,12 @@ const Index = () => {
   const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
 
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
-  const [activeStationId, setActiveStationId] = useState('toronto'); // Which station sees ISS
-  const [selectedStationId, setSelectedStationId] = useState('toronto'); // Which station user is controlling
+  const [activeStationId, setActiveStationId] = useState('toronto');
+  const [selectedStationId, setSelectedStationId] = useState('toronto');
   const [handoffCount, setHandoffCount] = useState(0);
   const [handoffInProgress, setHandoffInProgress] = useState(false);
 
-  // Update stations with real data from backend
+  // Update stations
   useEffect(() => {
     if (orbitalData?.stations) {
       setStations(prevStations => 
@@ -44,7 +44,7 @@ const Index = () => {
         })
       );
 
-      // Update active station (which station has ISS) and detect handoff
+      // Update active station and detect handoff
       if (orbitalData.active_station_id && orbitalData.active_station_id !== activeStationId) {
         const oldStation = activeStationId;
         setActiveStationId(orbitalData.active_station_id);
@@ -52,7 +52,7 @@ const Index = () => {
         setHandoffInProgress(true);
         console.log(`🔄 Handoff: ${oldStation} → ${orbitalData.active_station_id}`);
         
-        // Clear handoff indicator after 2 seconds
+        // Clear handoff indicator
         setTimeout(() => {
           setHandoffInProgress(false);
         }, 2000);
@@ -61,7 +61,7 @@ const Index = () => {
   }, [orbitalData, activeStationId]);
 
   const handleStationSelect = (stationId: string) => {
-    setSelectedStationId(stationId); // User manually selects which station to control
+    setSelectedStationId(stationId);
   };
 
   const activeStation = stations.find(s => s.id === activeStationId);

@@ -144,7 +144,6 @@ class LinkBudgetCalculator:
         snr_db = received_power_dbm - noise_floor_dbm
         
         # 6. Calculate Doppler shift using actual radial velocity
-        # Note: radial_velocity is positive when receding, negative when approaching
         # For Doppler: positive velocity = red shift (positive Doppler)
         #              negative velocity = blue shift (negative Doppler)
         doppler_khz = self.calculate_doppler_shift(radial_velocity_kmps, self.DOWNLINK_FREQ_MHZ)
