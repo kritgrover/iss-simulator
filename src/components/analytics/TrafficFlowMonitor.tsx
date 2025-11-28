@@ -91,23 +91,19 @@ const TrafficFlowMonitor = ({
     });
   }, [allQueues]);
 
-  // Calculate ALL bundles across network (for rendering)
+  // Calculate ALL bundles across network
   const allBundles = Object.values(allQueues).flat();
   const allQueuedBundles = allBundles.filter(b => b.status === "QUEUED");
 
   // Update bandwidth based on visible links or link status
-  // Priority: visibleLinks > linkStatus > 0
   useEffect(() => {
     let dataRateKbps = 0;
     
-    // First priority: Use visibleLinks (all stations that can see ISS)
-    // Backend already filters to only include visible stations, so we trust the data_rate_kbps values
+    // First priority: Use visibleLinks
     if (visibleLinks && visibleLinks.length > 0) {
       // Sum up data rates from all visible stations
-      // Include all visible links - backend ensures they're actually visible
       dataRateKbps = visibleLinks.reduce((sum, link) => {
         const rate = link.data_rate_kbps || 0;
-        // Only include positive data rates (stations with actual connection)
         return sum + (rate > 0 ? rate : 0);
       }, 0);
     } 
@@ -118,7 +114,6 @@ const TrafficFlowMonitor = ({
     
     // If we have a valid data rate, calculate uplink/downlink
     if (dataRateKbps > 0) {
-      // Add small variation for visual interest (but keep it stable)
       const variation = (Math.random() - 0.5) * 0.3; // Reduced variation for more stable display
       
       const uplinkRate = Math.max(0, dataRateKbps + variation);
@@ -152,9 +147,8 @@ const TrafficFlowMonitor = ({
     }
   }, [linkStatus, visibleLinks]);
 
-  // Update throughput graph - runs more frequently to catch ISS visibility changes
+  // Update throughput graph
   useEffect(() => {
-    // Immediately update the graph when bandwidth changes (don't wait for interval)
     setThroughputData(prev => {
       const newData = [...prev.slice(1), {
         time: '0s',
@@ -236,7 +230,7 @@ const TrafficFlowMonitor = ({
         TRAFFIC FLOW MONITOR
       </h3>
 
-      {/* 1. Uplink/Downlink Bandwidth Usage - NOW IN KBPS */}
+      {/* 1. Uplink/Downlink Bandwidth Usage*/}
       <div className="mb-4 space-y-3">
         <div>
           <div className="flex justify-between items-center mb-1">
@@ -284,7 +278,7 @@ const TrafficFlowMonitor = ({
         )}
       </div>
 
-      {/* 2. Bundle Queue Visualization - NETWORK-WIDE */}
+      {/* 2. Bundle Queue Visualization*/}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
@@ -316,7 +310,7 @@ const TrafficFlowMonitor = ({
         </div>
       </div>
 
-      {/* 3. Throughput Graph Over Time - NOW IN KBPS */}
+      {/* 3. Throughput Graph Over Time*/}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
           <div className="text-[10px] font-mono text-muted-foreground space-y-0.5">

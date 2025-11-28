@@ -11,8 +11,8 @@ export interface DTNBundle {
   current_custodian: string;
   forwarded_to: string | null;
   age_seconds: number;
-  hops: string[];  // Actual path taken
-  route: string[];  // Planned route (source -> ... -> destination)
+  hops: string[];
+  route: string[];
   delivered_at?: string | null;
   size_bytes: number;
   checksum: number;

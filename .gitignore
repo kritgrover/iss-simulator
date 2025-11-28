@@ -24,12 +24,3 @@ dist-ssr
 *.sw?
 
 backend/__pycache__
-backend/mininet_nodes/__pycache__
-backend/mininet_nodes/dtn_server.pyc
-backend/mininet_nodes/dtn_client.pyc
-backend/mininet_nodes/dtn_server.pyo
-backend/mininet_nodes/dtn_client.pyo
-backend/mininet_nodes/dtn_server.pyd
-backend/mininet_nodes/dtn_client.pyd
-backend/mininet_nodes/dtn_server.pyw
-backend/mininet_nodes/dtn_client.pyw

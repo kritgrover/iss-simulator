@@ -175,7 +175,7 @@ function ISS({ position }: { position: { latitude: number; longitude: number; al
   );
 }
 
-// Ground Station Marker (renders on Earth surface)
+// Ground Station Marker
 function GroundStationMarker({
   station,
 }: {
@@ -199,7 +199,7 @@ function GroundStationMarker({
 
   return (
     <group>
-      {/* Station marker - taller pin */}
+      {/* Station marker */}
       <group position={stationPos}>
         {/* Pin base */}
         <mesh>
@@ -349,7 +349,7 @@ function RotatingWorld({
   // Rotate the entire world group slowly
   useFrame(() => {
     if (groupRef.current) {
-      // Slower, more realistic-feeling rotation (not real-time, but cinematic)
+      // Slower, more realistic-feeling rotation
       groupRef.current.rotation.y += 0.0001; 
     }
     // Clouds rotate slightly relative to the earth
@@ -384,9 +384,6 @@ function RotatingWorld({
           depthWrite={false}
         />
       </mesh>
-
-      {/* Atmosphere - inside the group? No, keeps simpler if atmosphere is separate but it scales with earth. 
-          Actually, atmosphere shader uses view angle. It's fine inside. */}
       
       {/* Ground Stations */}
       {groundStations.map((station) => (
@@ -396,10 +393,10 @@ function RotatingWorld({
         />
       ))}
 
-      {/* ISS - Now rotates with the Earth system */}
+      {/* ISS */}
       <ISS position={issPosition} />
 
-      {/* Connection Lines - Now rotate with the Earth system */}
+      {/* Connection Lines */}
       <ConnectionLines
         groundStations={groundStations}
         issPosition={issPosition}
@@ -437,7 +434,7 @@ function Scene({ issPosition, groundStations }: Globe3DProps) {
         <Atmosphere />
       </Suspense>
 
-      {/* Camera controls */}
+      {/* Orbit controls */}
       <OrbitControls
         enablePan={true}
         enableZoom={true}

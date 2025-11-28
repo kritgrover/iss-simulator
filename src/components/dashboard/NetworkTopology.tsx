@@ -53,7 +53,7 @@ const NetworkTopology = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate node positions (ISS in center, stations in circle)
+  // Calculate node positions
   const nodePositions = useMemo(() => {
     const positions = new Map<string, { x: number; y: number }>();
     const centerX = 200;
@@ -79,7 +79,6 @@ const NetworkTopology = ({
     const currentTransmissionIds = new Set(activeTransmissions.map((t) => t.bundle_id));
     const newCompleted = new Set<string>();
 
-    // Find transmissions that just completed
     previousTransmissionsRef.current.forEach((id) => {
       if (!currentTransmissionIds.has(id)) {
         newCompleted.add(id);
@@ -94,20 +93,17 @@ const NetworkTopology = ({
     const allBundles = Object.values(dtnQueues).flat();
     
     // Helper function to get the last ground station from a route
-    // Routes may or may not include "ISS" as the last element
     const getLastGroundStation = (route: string[]): string | null => {
       if (route.length < 1) return null;
       const lastElement = route[route.length - 1]?.toLowerCase();
       if (lastElement === 'iss') {
-        // Route includes ISS, so second-to-last is last ground station
         return route.length >= 2 ? route[route.length - 2]?.toLowerCase() || null : null;
       } else {
-        // Route doesn't include ISS, so last element is last ground station
         return route[route.length - 1]?.toLowerCase() || null;
       }
     };
     
-    // Track bundles that reached last ground station - need to reset their previous links
+    // Track bundles that reached last ground station
     const bundlesAtLastStation = new Set<string>();
     const bundlesAtLastStationLinks = new Map<string, string>(); // bundleId -> issLinkKey
 
@@ -120,13 +116,10 @@ const NetworkTopology = ({
       
       if (!lastGroundStation) return;
       
-      // Bundle is at last station if current custodian matches the last ground station
       const isLastStation = currentCustodian === lastGroundStation;
       const isDelivered = bundle.status === 'DELIVERED';
 
-      // Only mark as last station if bundle is actually AT the last ground station
       if (isLastStation && !isDelivered) {
-        // Verify bundle is actually in this station's queue
         const stationQueue = dtnQueues[lastGroundStation] || [];
         const bundleInQueue = stationQueue.some(b => b.bundle_id === bundle.bundle_id);
         
@@ -138,11 +131,10 @@ const NetworkTopology = ({
       }
     });
 
-    // Check if ISS is in contact (activeStationId is set)
+    // Check if ISS is in contact
     const issInContact = activeStationId !== null && activeStationId !== undefined;
     const stationWithIssContact = issInContact ? activeStationId.toLowerCase() : null;
 
-    // Check if all bundles are done transmitting at the station with ISS contact
     const stationWithContactQueues = stationWithIssContact ? dtnQueues[stationWithIssContact] || [] : [];
     const hasPendingBundlesAtContactStation = stationWithContactQueues.some(
       (b) => b.status !== 'DELIVERED' && b.status !== 'EXPIRED'
@@ -151,7 +143,7 @@ const NetworkTopology = ({
       (t) => t.from_station.toLowerCase() === stationWithIssContact && t.to_station.toLowerCase() === 'iss'
     );
 
-    // Process bundles - prioritize last station bundles
+    // Process bundles
     allBundles.forEach((bundle) => {
       const route = bundle.route || bundle.hops || [];
       if (route.length < 2) return;
@@ -161,18 +153,17 @@ const NetworkTopology = ({
       const isLastStation = bundlesAtLastStation.has(bundle.bundle_id);
       const isDelivered = bundle.status === 'DELIVERED';
 
-      // Find active transmission for this bundle
       const activeTransmission = activeTransmissions.find((t) => t.bundle_id === bundle.bundle_id);
 
       if (isLastStation && !isDelivered) {
-        // Bundle at last ground station - mark all previous links as completed, then handle ISS link
+        // Bundle at last ground station
         const lastGroundStation = getLastGroundStation(route);
         if (!lastGroundStation || currentCustodian !== lastGroundStation) {
           // Bundle is not yet at the last station, skip
           return;
         }
         
-        // Additional verification: ensure the bundle is actually queued at this station
+        // ensure the bundle is actually queued at this station
         const stationQueue = dtnQueues[lastGroundStation] || [];
         const bundleInQueue = stationQueue.some(b => b.bundle_id === bundle.bundle_id);
         if (!bundleInQueue) {
@@ -180,7 +171,7 @@ const NetworkTopology = ({
           return;
         }
 
-        // Mark all previous links in the route as completed (green)
+        // Mark all previous links in the route as completed
         if (currentIndex > 0) {
           // Mark all links from start up to and including the link TO the last ground station
           for (let i = 0; i < currentIndex; i++) {
@@ -188,10 +179,10 @@ const NetworkTopology = ({
             const prevTo = route[i + 1]?.toLowerCase();
             if (prevFrom && prevTo) {
               const prevLinkKey = `${prevFrom}-${prevTo}`;
-              // Don't mark ISS links as completed here (they're handled separately)
+              // Don't mark ISS links as completed here
               if (!prevLinkKey.includes('-iss')) {
                 const existingState = newLinkStates.get(prevLinkKey);
-                // Mark as completed - allow overriding transmitting state for bundles at last station
+                // allow overriding transmitting state for bundles at last station
                 if (!existingState || existingState.state !== 'waiting_iss') {
                   newLinkStates.set(prevLinkKey, {
                     state: 'completed',
@@ -215,7 +206,7 @@ const NetworkTopology = ({
 
         if (activeTransmission && activeTransmission.to_station.toLowerCase() === 'iss' && 
             activeTransmission.from_station.toLowerCase() === currentCustodian) {
-          // Currently transmitting to ISS - always solid orange
+          // Currently transmitting to ISS
           newLinkStates.set(issLinkKey, {
             state: 'transmitting_iss',
             bundleId: bundle.bundle_id,
@@ -223,8 +214,6 @@ const NetworkTopology = ({
           });
         } else if (isStationWithIssContact) {
           // ISS is in contact with this station
-          // If there are pending bundles or active transmissions, show solid orange
-          // Otherwise, if all bundles are done, show green for 2 seconds
           const stationBundles = dtnQueues[lastGroundStation] || [];
           const hasPendingBundles = stationBundles.some(
             (b) => b.status !== 'DELIVERED' && b.status !== 'EXPIRED' && b.bundle_id !== bundle.bundle_id
@@ -236,13 +225,13 @@ const NetworkTopology = ({
           );
 
           if (hasPendingBundles || hasActiveTx) {
-            // Still have bundles to transmit - solid orange (will be set by active transmission)
+            // Still have bundles to transmit
             // Don't set waiting_iss here
           } else {
-            // All bundles done - check if we should show green
+            // All bundles done
             const prevState = previousLinkStatesRef.current.get(issLinkKey);
             if (prevState && (prevState.state === 'transmitting_iss' || prevState.state === 'waiting_iss')) {
-              // Just finished - show green for 2 seconds
+              // Just finished
               newLinkStates.set(issLinkKey, {
                 state: 'all_complete',
                 bundleId: bundle.bundle_id,
@@ -251,7 +240,7 @@ const NetworkTopology = ({
             }
           }
         } else {
-          // ISS NOT in contact with this station - blink while waiting
+          // ISS NOT in contact with this station
           newLinkStates.set(issLinkKey, {
             state: 'waiting_iss',
             bundleId: bundle.bundle_id,
@@ -259,7 +248,7 @@ const NetworkTopology = ({
           });
         }
       } else if (isDelivered) {
-        // Bundle delivered - mark ISS link as complete
+        // Bundle delivered
         const lastGroundStation = getLastGroundStation(route);
         if (lastGroundStation) {
           const issLinkKey = `${lastGroundStation}-iss`;
@@ -270,15 +259,13 @@ const NetworkTopology = ({
           });
         }
       } else if (activeTransmission && !bundlesAtLastStation.has(bundle.bundle_id)) {
-        // Active transmission - highlight current link and all previous links in route
+        // Active transmission
         const from = activeTransmission.from_station.toLowerCase();
         const to = activeTransmission.to_station.toLowerCase();
         const currentLinkKey = `${from}-${to}`;
         const isIssLink = to === 'iss' || from === 'iss';
 
         // Highlight current transmitting link
-        // If transmitting to ISS and ISS is in contact, use solid orange (transmitting_iss)
-        // Otherwise use regular transmitting state
         if (isIssLink) {
           newLinkStates.set(currentLinkKey, {
             state: 'transmitting_iss',
@@ -293,14 +280,13 @@ const NetworkTopology = ({
           });
         }
 
-        // Highlight all previous links in the route as completed (green)
+        // Highlight all previous links in the route as completed
         if (currentIndex > 0) {
           for (let i = 0; i < currentIndex; i++) {
             const prevFrom = route[i]?.toLowerCase();
             const prevTo = route[i + 1]?.toLowerCase();
             if (prevFrom && prevTo) {
               const prevLinkKey = `${prevFrom}-${prevTo}`;
-              // Don't override if this is an ISS link for a bundle at last station
               if (prevLinkKey.includes('-iss') && bundlesAtLastStation.has(bundle.bundle_id)) {
                 continue;
               }
@@ -317,7 +303,7 @@ const NetworkTopology = ({
           }
         }
       } else if (currentIndex > 0 && !bundlesAtLastStation.has(bundle.bundle_id)) {
-        // Bundle is queued but has a route - highlight completed links
+        // Bundle is queued but has a route
         for (let i = 0; i < currentIndex; i++) {
           const prevFrom = route[i]?.toLowerCase();
           const prevTo = route[i + 1]?.toLowerCase();
@@ -337,7 +323,7 @@ const NetworkTopology = ({
       }
     });
 
-    // Process active transmissions (for bundles not yet in queues or to override states)
+    // Process active transmissions
     activeTransmissions.forEach((transmission) => {
       const from = transmission.from_station.toLowerCase();
       const to = transmission.to_station.toLowerCase();
@@ -347,7 +333,7 @@ const NetworkTopology = ({
       // Get bundle to check route and status
       const bundle = allBundles.find((b) => b.bundle_id === transmission.bundle_id);
 
-      // If this is an ISS link and bundle is at last station, ensure it's set to transmitting_iss
+      // If this is an ISS link and bundle is at last station
       if (isIssLink && bundlesAtLastStation.has(transmission.bundle_id)) {
         const issLinkKey = bundlesAtLastStationLinks.get(transmission.bundle_id);
         if (issLinkKey) {
@@ -366,8 +352,7 @@ const NetworkTopology = ({
         const currentCustodian = bundle.current_custodian?.toLowerCase();
         const currentIndex = route.findIndex((r) => r.toLowerCase() === currentCustodian);
 
-        // Highlight current link (override if needed)
-        // Skip if this is an ISS link for bundle at last station (already handled above)
+        // Highlight current link
         if (!(isIssLink && bundlesAtLastStation.has(transmission.bundle_id))) {
           const existingState = newLinkStates.get(linkKey);
           if (!existingState || (existingState.bundleId === transmission.bundle_id && 
@@ -380,7 +365,7 @@ const NetworkTopology = ({
           }
         }
 
-        // Highlight previous links in route as completed
+        // Highlight previous links in route
         if (currentIndex > 0) {
           for (let i = 0; i < currentIndex; i++) {
             const prevFrom = route[i]?.toLowerCase();
@@ -405,7 +390,6 @@ const NetworkTopology = ({
         }
       } else {
         // No bundle info, use default transmission state
-        // Skip if this is an ISS link for bundle at last station
         if (!(isIssLink && bundlesAtLastStation.has(transmission.bundle_id))) {
           if (!newLinkStates.has(linkKey)) {
             newLinkStates.set(linkKey, {
@@ -418,12 +402,11 @@ const NetworkTopology = ({
       }
     });
 
-    // Handle completed transmissions - mark completed link as green
+    // Handle completed transmissions
     newCompleted.forEach((bundleId) => {
-      // Find the completed link from previous state
       previousLinkStatesRef.current.forEach((state, linkKey) => {
         if (state.bundleId === bundleId && (state.state === 'transmitting' || state.state === 'transmitting_iss')) {
-          // Mark as completed (green)
+          // Mark as completed
           newLinkStates.set(linkKey, {
             state: 'completed',
             bundleId,
@@ -433,13 +416,13 @@ const NetworkTopology = ({
       });
     });
 
-    // Reset previous links for bundles that reached last ground station
+    // Reset previous links
     bundlesAtLastStation.forEach((bundleId) => {
       const issLinkKey = bundlesAtLastStationLinks.get(bundleId);
       previousLinkStatesRef.current.forEach((prevState, prevLinkKey) => {
-        // Remove all previous link states for this bundle (except ISS link which is already set above)
+        // Remove all previous link states for this bundle
         if (prevState.bundleId === bundleId && prevLinkKey !== issLinkKey) {
-          // Don't add to newLinkStates - this resets the link to default
+          // Don't add to newLinkStates
         }
       });
     });
@@ -448,50 +431,50 @@ const NetworkTopology = ({
       const stationIssLinkKey = `${station.id.toLowerCase()}-iss`;
       const linkState = newLinkStates.get(stationIssLinkKey);
       
-      // If this ISS link has waiting_iss state, verify it's correct
+      // If this ISS link has waiting_iss state
       if (linkState && linkState.state === 'waiting_iss') {
-        // Check if this station is actually the last ground station for this bundle
+        // Check if this station is the last ground station for this bundle
         const bundle = allBundles.find((b) => b.bundle_id === linkState.bundleId);
         if (bundle) {
           const route = bundle.route || bundle.hops || [];
           const lastGroundStation = getLastGroundStation(route);
           const currentCustodian = bundle.current_custodian?.toLowerCase();
           
-          // Verify: bundle must be at this station AND this station must be the last ground station
+          // bundle must be at this station AND this station must be the last ground station
           const isCorrectStation = lastGroundStation === station.id.toLowerCase();
           const bundleAtStation = currentCustodian === station.id.toLowerCase();
           
-          // Also verify bundle is actually in this station's queue
+          // bundle is actually in this station's queue
           const stationQueue = dtnQueues[station.id.toLowerCase()] || [];
           const bundleInQueue = stationQueue.some(b => b.bundle_id === linkState.bundleId);
           
           // Only keep waiting_iss if all conditions are met
           if (!isCorrectStation || !bundleAtStation || !bundleInQueue) {
-            // Wrong station or bundle not actually here - remove waiting_iss state
+            // remove waiting_iss state
             newLinkStates.delete(stationIssLinkKey);
           }
         } else {
-          // Bundle not found - remove waiting_iss state
+          // remove waiting_iss state
           newLinkStates.delete(stationIssLinkKey);
         }
       }
     });
 
-    // Clean up old completed states after 2 seconds
+    // Clean up old completed states
     previousLinkStatesRef.current.forEach((state, linkKey) => {
       const age = now - state.timestamp;
       
-      // Skip if this is a bundle at last station (already handled above)
+      // Skip if this is a bundle at last station
       if (bundlesAtLastStation.has(state.bundleId) && !linkKey.includes('-iss')) {
         return;
       }
       
       if ((state.state === 'completed' || state.state === 'all_complete') && age > 2000) {
-        // Remove after 2 seconds - don't add to newLinkStates
+        // don't add to newLinkStates
         return;
       }
 
-      // Keep other states if not overwritten
+      // Keep other states
       if (!newLinkStates.has(linkKey) && state.state !== 'completed' && state.state !== 'all_complete') {
         newLinkStates.set(linkKey, state);
       }
@@ -502,7 +485,7 @@ const NetworkTopology = ({
     previousTransmissionsRef.current = currentTransmissionIds;
   }, [activeTransmissions, dtnQueues, activeStationId]);
 
-  // Get link color based on state
+  // Get link color
   const getLinkColor = (linkKey: string): string => {
     let state = linkStates.get(linkKey);
     
@@ -515,23 +498,23 @@ const NetworkTopology = ({
       }
     }
 
-    if (!state) return '#6b7280'; // Default gray
+    if (!state) return '#6b7280';
 
     switch (state.state) {
       case 'transmitting':
       case 'transmitting_iss':
-        return '#f97316'; // Orange
+        return '#f97316';
       case 'completed':
       case 'all_complete':
-        return '#22c55e'; // Green
+        return '#22c55e';
       case 'waiting_iss':
-        return '#f97316'; // Always orange for waiting_iss (blinking handled by opacity)
+        return '#f97316';
       default:
-        return '#6b7280'; // Default gray
+        return '#6b7280';
     }
   };
 
-  // Get link width based on state
+  // Get link width
   const getLinkWidth = (linkKey: string): number => {
     let state = linkStates.get(linkKey);
 
@@ -558,10 +541,10 @@ const NetworkTopology = ({
     }
   };
 
-  // Get node color (highlight if part of active transmission)
+  // Get node color
   const getNodeColor = (nodeId: string): string => {
     if (nodeId === 'iss') {
-      return '#3b82f6'; // Blue for ISS
+      return '#3b82f6';
     }
 
     // Check if node is part of active transmission
@@ -570,7 +553,7 @@ const NetworkTopology = ({
     );
 
     if (isActive) {
-      return '#f97316'; // Orange when transmitting
+      return '#f97316';
     }
 
     const station = stations.find((s) => s.id === nodeId);
@@ -586,7 +569,7 @@ const NetworkTopology = ({
     return isActive ? 12 : 10;
   };
 
-  // Render edges (links)
+  // Render edges
   const renderEdges = () => {
     const edges: JSX.Element[] = [];
     const renderedLinks = new Set<string>();
@@ -616,7 +599,7 @@ const NetworkTopology = ({
       renderedLinks.add(linkKey);
     });
 
-    // Render ISS links from ALL stations - always visible
+    // Render ISS links
     const issPos = nodePositions.get('iss');
     if (issPos) {
       stations.forEach((station) => {
@@ -628,17 +611,15 @@ const NetworkTopology = ({
         const color = getLinkColor(linkKey);
         const width = getLinkWidth(linkKey);
         
-        // Always show ISS links - higher opacity for active states, visible for idle
         let opacity = 0.6;
         if (state) {
           if (state.state === 'waiting_iss') {
-            // Blinking - use blinkState to control opacity
             opacity = blinkState ? 0.9 : 0.6;
           } else if (state.state === 'transmitting_iss' || state.state === 'transmitting' || 
                      state.state === 'completed' || state.state === 'all_complete') {
-            opacity = 0.7; // Active states
+            opacity = 0.7;
           } else {
-            opacity = 0.6; // Default
+            opacity = 0.6;
           }
         }
 
@@ -661,11 +642,11 @@ const NetworkTopology = ({
     return edges;
   };
 
-  // Render nodes
+  // Render stations
   const renderNodes = () => {
     const nodes: JSX.Element[] = [];
 
-    // Render ISS node
+    // Render ISS
     const issPos = nodePositions.get('iss');
     if (issPos) {
       const color = getNodeColor('iss');
