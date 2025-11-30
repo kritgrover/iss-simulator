@@ -8,6 +8,7 @@ import MessageExchange from "@/components/dashboard/MessageExchange";
 import StationNetwork from "@/components/dashboard/StationNetwork";
 import LinkBudgetChart from "@/components/analytics/LinkBudgetChart";
 import TrafficFlowMonitor from "@/components/analytics/TrafficFlowMonitor";
+import TransmissionHistory from "@/components/analytics/TransmissionHistory";
 import TransmissionMonitor from "@/components/dashboard/TransmissionMonitor";
 import NetworkTopology from "@/components/dashboard/NetworkTopology";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -75,24 +76,108 @@ const Index = () => {
     <div className="min-h-screen flex flex-col">
       <Header isConnected={orbitalConnected} connectionError={orbitalConnected ? null : "Connecting..."} />
       
-      <main className="flex-1">
-        <ResizablePanelGroup direction="horizontal" className="h-full">
-          {/* Left Panel - Globe View & Sky View */}
+      {/* Full-screen Globe Section */}
+      <section className="h-screen w-full relative">
+        <GlobeView 
+          stations={stations}
+          activeStationId={activeStationId}
+          orbitalData={orbitalData}
+        />
+        
+        {/* Floating Orbital Parameters and Ground Station Status */}
+        <div className="absolute top-4 right-4 bottom-4 md:bottom-auto z-20 w-full md:w-80 space-y-4 flex flex-col md:block overflow-y-auto">
+          <div 
+            className="rounded-lg transition-all duration-300 [&>*]:bg-transparent [&>*]:border-0 flex-shrink-0"
+            style={{
+              background: 'rgba(0, 0, 0, 0.7)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <OrbitalParameters orbitalData={orbitalData} />
+          </div>
+          
+          {/* Ground Station Status */}
+          {activeStation && activeStationData && (
+            <div
+              className="rounded-lg p-3 transition-all duration-300 flex-shrink-0"
+              style={{
+                background: `${activeStation.color}10`,
+                backdropFilter: 'blur(16px)',
+                border: `1px solid ${activeStation.color}40`,
+                boxShadow: `0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 ${activeStation.color}20, 0 0 20px ${activeStation.color}20`,
+              }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className="w-3 h-3 rounded-full animate-pulse"
+                  style={{
+                    backgroundColor: activeStation.color,
+                    boxShadow: `0 0 10px ${activeStation.color}`
+                  }}
+                />
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: activeStation.color }}>
+                  {activeStation.name}
+                </span>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs font-mono transition-all hover:translate-x-1">
+                  <span className="text-secondary">STATUS:</span>{' '}
+                  <span className={(activeStationData.is_visible ?? false) ? 'text-success font-semibold' : 'text-secondary'}>
+                    {(activeStationData.is_visible ?? false) ? '🔗 TRACKING' : '⏳ WAITING'}
+                  </span>
+                </div>
+                {(activeStationData.is_visible ?? false) ? (
+                  <div className="text-xs font-mono transition-all hover:translate-x-1">
+                    <span className="text-secondary">ELEV:</span>{' '}
+                    <span className="text-primary font-semibold">{activeStationData.look_angles?.elevation?.toFixed(1) ?? '0.0'}°</span>
+                  </div>
+                ) : (
+                  <div className="text-xs font-mono">
+                    <span className="text-secondary">NEXT:</span>{' '}
+                    <span className="text-amber-500">
+                      {activeStationData.next_pass_minutes > 0 
+                        ? `${activeStationData.next_pass_minutes} min`
+                        : '--'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        
+      </section>
+      
+      {/* Panels Section - Below Globe */}
+      <main className="flex-1 w-full">
+        <ResizablePanelGroup direction="horizontal" className="h-full min-h-screen">
+          {/* Left Panel - Station Network, Link Budget & Sky View */}
           <ResizablePanel defaultSize={28} minSize={20} className="bg-panel">
             <div className="h-full border-r border-border flex flex-col">
-              <div className="flex-1 min-h-0">
-                <GlobeView 
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+                <StationNetwork 
                   stations={stations}
-                  activeStationId={activeStationId} // Show which station has ISS
-                  orbitalData={orbitalData}
+                  onStationSelect={handleStationSelect}
+                  dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
+                  visibleStationsCount={orbitalData?.visible_stations_count ?? 0}
+                  handoffInProgress={handoffInProgress}
+                  activeStationId={activeStationId}
+                  selectedStationId={selectedStationId}
+                  meshConnections={orbitalData?.mesh_connections ?? []}
                 />
-              </div>
-              <div className="h-[420px]">
-                <SkyView 
-                  azimuth={activeStationData?.look_angles?.azimuth ?? 0} 
-                  elevation={activeStationData?.look_angles?.elevation ?? 0} 
-                  isVisible={activeStationData?.is_visible ?? false} 
+                <LinkBudgetChart 
+                  linkBudgetHistory={orbitalData?.link_budget_history ?? []}
+                  currentSNR={orbitalData?.link_status?.snr_db}
                 />
+                <div className="h-[420px] flex-shrink-0">
+                  <SkyView 
+                    azimuth={activeStationData?.look_angles?.azimuth ?? 0} 
+                    elevation={activeStationData?.look_angles?.elevation ?? 0} 
+                    isVisible={activeStationData?.is_visible ?? false} 
+                  />
+                </div>
               </div>
             </div>
           </ResizablePanel>
@@ -100,10 +185,8 @@ const Index = () => {
           <ResizableHandle withHandle className="w-1 bg-muted hover:bg-primary/30 transition-colors" />
 
           {/* Center Panel - Communication Dashboard */}
-          <ResizablePanel defaultSize={42} minSize={30}>
+          <ResizablePanel defaultSize={42} minSize={30} className="bg-panel">
             <div className="h-full border-r border-border p-4 space-y-4 overflow-y-auto">
-              <LinkStatus linkStatus={orbitalData?.link_status ?? null} />
-
               <MessageExchange 
                 activeStationId={selectedStationId}
                 stationColor={selectedStation?.color || '#4ade80'}
@@ -112,28 +195,23 @@ const Index = () => {
                 dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 custodyAcks={orbitalData?.custody_acks ?? []}
               />
+
+              <TransmissionHistory 
+                deliveredBundles={orbitalData?.delivered_bundles ?? []}
+              />
+
               {orbitalData?.active_transmissions && orbitalData.active_transmissions.length > 0 && (
                 <TransmissionMonitor 
                   activeTransmissions={orbitalData.active_transmissions}
                 />
               )}
-              <StationNetwork 
-                stations={stations}
-                onStationSelect={handleStationSelect}
-                dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
-                visibleStationsCount={orbitalData?.visible_stations_count ?? 0}
-                handoffInProgress={handoffInProgress}
-                activeStationId={activeStationId}
-                selectedStationId={selectedStationId}
-                meshConnections={orbitalData?.mesh_connections ?? []}
-              />
             </div>
           </ResizablePanel>
 
           <ResizableHandle withHandle className="w-1 bg-muted hover:bg-primary/30 transition-colors" />
 
-          {/* Right Panel - Analytics & Orbital Parameters */}
-          <ResizablePanel defaultSize={30} minSize={20}>
+          {/* Right Panel - Analytics */}
+          <ResizablePanel defaultSize={30} minSize={20} className="bg-panel">
             <div className="h-full p-4 space-y-4 overflow-y-auto">
               <NetworkTopology
                 stations={stations}
@@ -142,17 +220,14 @@ const Index = () => {
                 dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 activeStationId={orbitalData?.active_station_id}
               />
-              <OrbitalParameters orbitalData={orbitalData} />
-              <LinkBudgetChart 
-                linkBudgetHistory={orbitalData?.link_budget_history ?? []}
-                currentSNR={orbitalData?.link_status?.snr_db}
-              />
+              
+              <LinkStatus linkStatus={orbitalData?.link_status ?? null} />
+              
               <TrafficFlowMonitor 
                 linkStatus={orbitalData?.link_status ?? null}
                 visibleLinks={orbitalData?.visible_links ?? []}
                 allQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 stations={orbitalData?.stations ?? []}
-                deliveredBundles={orbitalData?.delivered_bundles ?? []}
                 isConnected={orbitalData?.link_status?.connection_state === "ACQUIRED" || orbitalData?.link_status?.connection_state === "DEGRADED"}
               />
             </div>

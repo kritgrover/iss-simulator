@@ -1,7 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
-import { ArrowRight, CheckCircle, Clock } from "lucide-react";
 import { DTNBundle } from "@/types/dtnBundle";
 
 interface Station {
@@ -27,27 +26,13 @@ interface TrafficFlowMonitorProps {
     data_rate_kbps: number;
   }>;
   allQueues?: Record<string, DTNBundle[]>;
-  deliveredBundles?: DTNBundle[];
   stations?: Station[];
   isConnected?: boolean;
-}
-
-interface BundleJourney {
-  bundle_id_short: string;
-  payload: string;
-  hops: string[];
-  priority: string;
-  status: string;
-  created_at: string;
-  delivered_at?: string | null;
-  size_bytes: number;
-  delivery_time_sec?: number;
 }
 
 const TrafficFlowMonitor = ({ 
   linkStatus,
   allQueues = {},
-  deliveredBundles = [],
   visibleLinks = [],
   stations = [],
   isConnected = false 
@@ -56,7 +41,6 @@ const TrafficFlowMonitor = ({
   const [downlinkBandwidth, setDownlinkBandwidth] = useState(0);
   const [throughputData, setThroughputData] = useState<Array<{time: string, uplink: number, downlink: number}>>([]);
   const [queueStats, setQueueStats] = useState({ avgTime: 0, maxDepth: 0 });
-  const [bundleHistory, setBundleHistory] = useState<BundleJourney[]>([]);
 
   // Initialize throughput data
   useEffect(() => {
@@ -173,34 +157,6 @@ const TrafficFlowMonitor = ({
     return () => clearInterval(interval);
   }, [uplinkBandwidth, downlinkBandwidth]);
 
-  // Track last 5 delivered bundles
-  useEffect(() => {
-    console.log('Delivered bundles prop:', deliveredBundles);
-    
-    const journeys = deliveredBundles
-      .slice(0, 5)
-      .map(b => {
-        const createdTime = new Date(b.created_at).getTime();
-        const deliveredTime = b.delivered_at ? new Date(b.delivered_at).getTime() : createdTime;
-        const deliveryTimeSec = (deliveredTime - createdTime) / 1000;
-        
-        return {
-          bundle_id_short: b.bundle_id_short,
-          payload: b.payload,
-          hops: b.hops,
-          priority: b.priority,
-          status: b.status,
-          created_at: b.created_at,
-          delivered_at: b.delivered_at,
-          size_bytes: b.size_bytes,
-          delivery_time_sec: deliveryTimeSec
-        };
-      });
-    
-    console.log('Bundle history to display:', journeys);
-    setBundleHistory(journeys);
-  }, [deliveredBundles]);
-
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'EXPEDITED': return '#ef4444';
@@ -208,20 +164,6 @@ const TrafficFlowMonitor = ({
       case 'BULK': return '#6b7280';
       default: return '#6b7280';
     }
-  };
-
-  const formatTime = (isoString: string) => {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', { hour12: false });
-  };
-
-  const formatDuration = (seconds: number) => {
-    if (seconds < 60) {
-      return `${seconds.toFixed(1)}s`;
-    }
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${minutes}m ${secs}s`;
   };
 
   return (
@@ -234,7 +176,7 @@ const TrafficFlowMonitor = ({
       <div className="mb-4 space-y-3">
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">UPLINK</span>
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">UPLINK</span>
             <span className="text-xs font-mono text-muted-foreground">
               {uplinkBandwidth.toFixed(1)} kbps / 200 kbps
             </span>
@@ -248,7 +190,7 @@ const TrafficFlowMonitor = ({
         </div>
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">DOWNLINK</span>
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">DOWNLINK</span>
             <span className="text-xs font-mono text-muted-foreground">
               {downlinkBandwidth.toFixed(1)} kbps / 200 kbps
             </span>
@@ -263,12 +205,12 @@ const TrafficFlowMonitor = ({
 
         {visibleLinks && visibleLinks.length > 1 && (
           <div className="pt-2 border-t border-border/30">
-            <div className="text-[9px] text-secondary/80 mb-1">
+            <div className="text-[11px] text-secondary/80 mb-1">
               Active Links ({visibleLinks.length} stations):
             </div>
             <div className="space-y-1">
               {visibleLinks.map(link => (
-                <div key={link.station_id} className="flex justify-between items-center text-[9px]">
+                <div key={link.station_id} className="flex justify-between items-center text-[11px]">
                   <span className="text-secondary uppercase font-mono">{link.station_name}</span>
                   <span className="text-cyan-400 font-mono">{link.data_rate_kbps.toFixed(1)} kbps</span>
                 </div>
@@ -281,7 +223,7 @@ const TrafficFlowMonitor = ({
       {/* 2. Bundle Queue Visualization*/}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
           <span className="text-xs font-mono text-muted-foreground">
             Queue: {allQueuedBundles.length} bundles
           </span>
@@ -304,7 +246,7 @@ const TrafficFlowMonitor = ({
             <span className="text-xs text-muted-foreground/50 italic">No bundles in queue</span>
           )}
         </div>
-        <div className="flex justify-between text-[10px] text-muted-foreground">
+        <div className="flex justify-between text-[11px] text-muted-foreground">
           <span>Avg Queue Time: {queueStats.avgTime} ms</span>
           <span>Network Depth: {queueStats.maxDepth} bundles</span>
         </div>
@@ -313,11 +255,11 @@ const TrafficFlowMonitor = ({
       {/* 3. Throughput Graph Over Time*/}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
-          <div className="text-[10px] font-mono text-muted-foreground space-y-0.5">
+          <div className="text-[11px] font-mono text-muted-foreground space-y-0.5">
             <div className="text-cyan-400">Uplink: {uplinkBandwidth.toFixed(1)} kbps</div>
             <div className="text-green-400">Downlink: {downlinkBandwidth.toFixed(1)} kbps</div>
           </div>
-          <div className="flex gap-3 text-[10px]">
+          <div className="flex gap-3 text-[11px]">
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 bg-cyan-500 rounded-sm" />
               <span className="text-muted-foreground">Uplink</span>
@@ -334,15 +276,15 @@ const TrafficFlowMonitor = ({
             <XAxis 
               dataKey="time" 
               stroke="#6b7280" 
-              style={{ fontSize: '10px' }}
+              style={{ fontSize: '11px' }}
               tick={{ fill: '#6b7280' }}
             />
             <YAxis 
               stroke="#6b7280" 
-              style={{ fontSize: '10px' }}
+              style={{ fontSize: '11px' }}
               tick={{ fill: '#6b7280' }}
               domain={[0, 200]}
-              label={{ value: 'kbps', angle: -90, position: 'insideLeft', style: { fontSize: '10px', fill: '#6b7280' } }}
+              label={{ value: 'kbps', angle: -90, position: 'insideLeft', style: { fontSize: '11px', fill: '#6b7280' } }}
             />
             <Line 
               type="monotone" 
@@ -364,92 +306,6 @@ const TrafficFlowMonitor = ({
         </ResponsiveContainer>
       </div>
 
-      {/* Last 5 Delivered Bundles History */}
-      <div className="p-3 bg-[#1a1d29] rounded-lg">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-3">
-          TRANSMISSION HISTORY (LAST 5 DELIVERED)
-        </div>
-        <div className="space-y-3">
-          {bundleHistory.length === 0 ? (
-            <div className="text-xs text-muted-foreground/50 text-center py-2">
-              No delivered bundles yet
-            </div>
-          ) : (
-            bundleHistory.map((bundle) => (
-              <div 
-                key={`${bundle.bundle_id_short}-${bundle.delivered_at}`}
-                className="p-2 rounded bg-background/50 hover:bg-background/80 transition-colors border border-border/50"
-              >
-                {/* Header: ID, Priority, Status */}
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span 
-                      className="w-2 h-2 rounded-full" 
-                      style={{ backgroundColor: getPriorityColor(bundle.priority) }}
-                    />
-                    <span className="text-[10px] font-mono text-foreground font-semibold">
-                      {bundle.bundle_id_short}
-                    </span>
-                    <span
-                      className="text-[9px] font-mono px-1 py-0.5 rounded"
-                      style={{
-                        color: getPriorityColor(bundle.priority),
-                        backgroundColor: `${getPriorityColor(bundle.priority)}20`
-                      }}
-                    >
-                      {bundle.priority}
-                    </span>
-                  </div>
-                  <CheckCircle className="w-3 h-3 text-success" />
-                </div>
-
-                {/* Message Payload */}
-                <div className="mb-2 text-[10px] text-secondary italic truncate">
-                  "{bundle.payload}"
-                </div>
-
-                {/* Path Visualization */}
-                <div className="flex items-center gap-1 mb-2 flex-wrap">
-                  {bundle.hops.map((hop, idx) => (
-                    <div key={idx} className="flex items-center gap-1">
-                      <span className="text-[9px] text-foreground uppercase font-mono bg-background/80 px-1.5 py-0.5 rounded">
-                        {hop}
-                      </span>
-                      {idx < bundle.hops.length - 1 && (
-                        <ArrowRight className="w-2.5 h-2.5 text-secondary" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Stats: Size, Time, Created */}
-                <div className="grid grid-cols-3 gap-2 text-[9px] text-secondary">
-                  <div className="flex items-center gap-1">
-                    <span className="text-secondary/60">Size:</span>
-                    <span className="text-foreground font-mono">
-                      {(bundle.size_bytes / 1024).toFixed(2)} KB
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5 text-secondary/60" />
-                    <span className="text-foreground font-mono">
-                      {bundle.delivery_time_sec !== undefined 
-                        ? formatDuration(bundle.delivery_time_sec)
-                        : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-secondary/60">Created:</span>
-                    <span className="text-foreground font-mono">
-                      {formatTime(bundle.created_at)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
     </Card>
   );
 };

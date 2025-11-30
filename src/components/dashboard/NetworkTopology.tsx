@@ -658,7 +658,7 @@ const NetworkTopology = ({
             x={issPos.x}
             y={issPos.y + size + 12}
             textAnchor="middle"
-            className="text-[10px] fill-foreground font-semibold"
+            className="text-[11px] fill-foreground font-semibold"
           >
             ISS
           </text>
@@ -681,7 +681,7 @@ const NetworkTopology = ({
             x={pos.x}
             y={pos.y + size + 10}
             textAnchor="middle"
-            className="text-[9px] fill-foreground font-medium"
+            className="text-[10px] fill-foreground font-medium"
           >
             {station.name.substring(0, 4)}
           </text>
@@ -695,8 +695,8 @@ const NetworkTopology = ({
   return (
     <Card className="p-4">
       <div className="mb-3">
-        <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">NETWORK TOPOLOGY</h3>
-        <p className="text-[10px] text-secondary/60 mt-1">Mininet Network Graph</p>
+        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary">NETWORK TOPOLOGY</h3>
+        <p className="text-[11px] text-secondary/60 mt-1">Mininet Network Graph</p>
       </div>
 
       <div className="w-full flex justify-center">
@@ -715,7 +715,7 @@ const NetworkTopology = ({
         </svg>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2 text-[9px] text-secondary/80">
+      <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-secondary/80">
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-full bg-orange-500" />
           <span>Transmitting</span>

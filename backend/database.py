@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import os
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 
@@ -12,44 +13,100 @@ class DatabaseManager:
         self.db_path = db_path
         self.init_db()
         
+    def _recreate_database(self):
+        """Delete corrupted database file and recreate it."""
+        if os.path.exists(self.db_path):
+            try:
+                os.remove(self.db_path)
+                print(f"🗑️  Removed corrupted database file: {self.db_path}")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not remove corrupted database file: {e}")
+        
     def get_connection(self):
         """Get a database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            # Test the connection by executing a simple query
+            conn.execute("SELECT 1")
+            return conn
+        except sqlite3.DatabaseError as e:
+            # Database is corrupted, recreate it
+            print(f"⚠️  Database corruption detected: {e}")
+            try:
+                conn.close()  # Try to close the corrupted connection if it exists
+            except:
+                pass
+            self._recreate_database()
+            # Try again after recreation
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            return conn
         
     def init_db(self):
         """Initialize the database schema."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Create bundles table
-        # We store complex objects like hops and route as JSON strings
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS bundles (
-            bundle_id TEXT PRIMARY KEY,
-            source_station TEXT,
-            destination_station TEXT,
-            payload TEXT,
-            priority TEXT,
-            status TEXT,
-            created_at TEXT,
-            ttl_hours INTEGER,
-            current_custodian TEXT,
-            forwarded_to TEXT,
-            delivered_at TEXT,
-            hops TEXT,
-            route TEXT,
-            size_bytes INTEGER,
-            checksum INTEGER,
-            failure_reason TEXT,
-            updated_at TEXT
-        )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        print(f"💾 Database initialized at {self.db_path}")
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Create bundles table
+            # We store complex objects like hops and route as JSON strings
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bundles (
+                bundle_id TEXT PRIMARY KEY,
+                source_station TEXT,
+                destination_station TEXT,
+                payload TEXT,
+                priority TEXT,
+                status TEXT,
+                created_at TEXT,
+                ttl_hours INTEGER,
+                current_custodian TEXT,
+                forwarded_to TEXT,
+                delivered_at TEXT,
+                hops TEXT,
+                route TEXT,
+                size_bytes INTEGER,
+                checksum INTEGER,
+                failure_reason TEXT,
+                updated_at TEXT
+            )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            print(f"💾 Database initialized at {self.db_path}")
+        except sqlite3.DatabaseError as e:
+            # Database is corrupted, recreate it
+            print(f"⚠️  Database corruption detected during initialization: {e}")
+            self._recreate_database()
+            # Retry initialization
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bundles (
+                bundle_id TEXT PRIMARY KEY,
+                source_station TEXT,
+                destination_station TEXT,
+                payload TEXT,
+                priority TEXT,
+                status TEXT,
+                created_at TEXT,
+                ttl_hours INTEGER,
+                current_custodian TEXT,
+                forwarded_to TEXT,
+                delivered_at TEXT,
+                hops TEXT,
+                route TEXT,
+                size_bytes INTEGER,
+                checksum INTEGER,
+                failure_reason TEXT,
+                updated_at TEXT
+            )
+            ''')
+            conn.commit()
+            conn.close()
+            print(f"💾 Database recreated and initialized at {self.db_path}")
         
     def save_bundle(self, bundle_data: Dict[str, Any]):
         """
