@@ -1,5 +1,3 @@
-import { Play, Pause, Clock, Satellite } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { GroundStation } from "@/types/groundStation";
 import Globe3D from "./Globe3D";
@@ -91,48 +89,31 @@ const GlobeView = ({
   const activeStation = stations.find(s => s.id === activeStationId);
   const activeStationData = orbitalData?.stations?.find(s => s.id === activeStationId);
   const issInCone = activeStationData?.is_visible ?? false;
-  
-  const issLat = orbitalData?.iss_position?.latitude ?? 0;
-  const issLon = orbitalData?.iss_position?.longitude ?? 0;
-  const issAlt = orbitalData?.iss_position?.altitude_km ?? 0;
-  const issVelocity = orbitalData?.iss_position?.velocity_kmps ?? 0;
-
-  const formatTime = (isoString?: string) => {
-    if (!isoString) return "--:--:--";
-    const date = new Date(isoString);
-    return date.toISOString().substr(11, 8);
-  };
 
   // Count how many stations are currently tracking
   const trackingStationsCount = orbitalData?.stations?.filter(s => s.is_visible).length ?? 0;
 
   return (
-    <div className="h-full flex flex-col bg-[#0a0e1a]">
-      <div className="px-4 py-3 border-b border-border bg-[#0f1729]">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold tracking-wider uppercase text-secondary">
-            ORBITAL TRACKING
-          </h2>
-          <div className="flex items-center gap-3">
-            {trackingStationsCount > 0 && (
-              <div className="flex items-center gap-2 bg-success/20 rounded px-2 py-1">
-                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                <span className="text-xs font-mono text-success">
-                  {trackingStationsCount} STATION{trackingStationsCount > 1 ? 'S' : ''} TRACKING
-                </span>
-              </div>
-            )}
-            {orbitalData && (
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                <span className="text-xs font-mono text-success">LIVE</span>
-              </div>
-            )}
+    <div className="h-full w-full flex items-center justify-center relative bg-[#0a0e1a]">
+      {/* Tracking Status Overlay */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-3">
+        {trackingStationsCount > 0 && (
+          <div className="flex items-center gap-2 bg-success/20 rounded px-2 py-1 backdrop-blur-sm border border-success/30">
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+            <span className="text-xs font-mono text-success">
+              {trackingStationsCount} STATION{trackingStationsCount > 1 ? 'S' : ''} TRACKING
+            </span>
           </div>
-        </div>
+        )}
+        {orbitalData && (
+          <div className="flex items-center gap-2 bg-success/20 rounded px-2 py-1 backdrop-blur-sm border border-success/30">
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+            <span className="text-xs font-mono text-success">LIVE</span>
+          </div>
+        )}
       </div>
       
-      <div className="flex-1 flex items-center justify-center relative">
+      <div className="flex-1 flex items-center justify-center relative w-full h-full">
         {/* 3D Globe */}
         <div className="w-full h-full">
           <Globe3D
@@ -179,93 +160,6 @@ const GlobeView = ({
           </div>
         </div>
 
-        {/* Data Panels - Glassmorphism */}
-        <div className="absolute bottom-4 left-4 right-4 flex gap-4 animate-in slide-in-from-bottom duration-500">
-          {/* ISS Data */}
-          <div
-            className="flex-1 rounded-lg p-3 transition-all duration-300 hover:scale-105"
-            style={{
-              background: 'rgba(0, 255, 0, 0.05)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(0, 255, 0, 0.2)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(0, 255, 0, 0.1), 0 0 20px rgba(0, 255, 0, 0.1)',
-            }}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <Satellite className="w-4 h-4 text-success animate-pulse" />
-              <span className="text-xs font-semibold text-success uppercase tracking-wide">
-                ISS Position
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <div className="text-xs font-mono transition-all hover:translate-x-1">
-                <span className="text-secondary">LAT:</span>{' '}
-                <span className="text-success font-semibold">{issLat.toFixed(4)}°</span>
-              </div>
-              <div className="text-xs font-mono transition-all hover:translate-x-1">
-                <span className="text-secondary">LON:</span>{' '}
-                <span className="text-success font-semibold">{issLon.toFixed(4)}°</span>
-              </div>
-              <div className="text-xs font-mono transition-all hover:translate-x-1">
-                <span className="text-secondary">ALT:</span>{' '}
-                <span className="text-primary font-semibold">{issAlt.toFixed(1)} km</span>
-              </div>
-              <div className="text-xs font-mono transition-all hover:translate-x-1">
-                <span className="text-secondary">VEL:</span>{' '}
-                <span className="text-primary font-semibold">{issVelocity.toFixed(2)} km/s</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Ground Station Status */}
-          {activeStation && activeStationData && (
-            <div
-              className="flex-1 rounded-lg p-3 transition-all duration-300 hover:scale-105"
-              style={{
-                background: `${activeStation.color}10`,
-                backdropFilter: 'blur(16px)',
-                border: `1px solid ${activeStation.color}40`,
-                boxShadow: `0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 ${activeStation.color}20, 0 0 20px ${activeStation.color}20`,
-              }}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div
-                  className="w-3 h-3 rounded-full animate-pulse"
-                  style={{
-                    backgroundColor: activeStation.color,
-                    boxShadow: `0 0 10px ${activeStation.color}`
-                  }}
-                />
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: activeStation.color }}>
-                  {activeStation.name}
-                </span>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs font-mono transition-all hover:translate-x-1">
-                  <span className="text-secondary">STATUS:</span>{' '}
-                  <span className={issInCone ? 'text-success font-semibold' : 'text-secondary'}>
-                    {issInCone ? '🔗 TRACKING' : '⏳ WAITING'}
-                  </span>
-                </div>
-                {issInCone ? (
-                  <div className="text-xs font-mono transition-all hover:translate-x-1">
-                    <span className="text-secondary">ELEV:</span>{' '}
-                    <span className="text-primary font-semibold">{activeStationData.look_angles.elevation.toFixed(1)}°</span>
-                  </div>
-                ) : (
-                  <div className="text-xs font-mono">
-                    <span className="text-secondary">NEXT:</span>{' '}
-                    <span className="text-amber-500">
-                      {activeStationData.next_pass_minutes > 0 
-                        ? `${activeStationData.next_pass_minutes} min`
-                        : '--'}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Link Acquired Banner */}
         {issInCone && activeStation && !handoffInProgress && (
