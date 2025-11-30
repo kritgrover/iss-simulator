@@ -95,13 +95,13 @@ const StationNetwork = ({
     <Card className="p-4">
       <div className="flex justify-between items-center mb-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">
+          <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary">
             GROUND STATION NETWORK
           </h3>
           {visibleStationsCount > 0 && (
             <div className="flex items-center gap-1 bg-success/20 rounded-full px-2 py-0.5">
               <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-              <span className="text-[10px] font-mono text-success">
+              <span className="text-[11px] font-mono text-success">
                 {visibleStationsCount} ACTIVE
               </span>
             </div>
@@ -111,7 +111,7 @@ const StationNetwork = ({
           <Button 
             variant="outline" 
             size="sm" 
-            className="h-6 px-2 text-[10px]"
+            className="h-6 px-2 text-[11px]"
             onClick={onAddStation}
           >
             <Plus className="h-3 w-3 mr-1" />
@@ -149,7 +149,7 @@ const StationNetwork = ({
               {isHighlighted && (
                 <div className="flex items-center gap-2 bg-amber-500/30 px-2 py-1 border-b border-amber-500/50">
                   <Zap className="w-3 h-3 text-amber-500 animate-pulse" />
-                  <span className="text-[10px] font-mono font-semibold text-amber-500 uppercase">
+                  <span className="text-[11px] font-mono font-semibold text-amber-500 uppercase">
                     Handoff Active
                   </span>
                 </div>
@@ -158,7 +158,7 @@ const StationNetwork = ({
               {/* Selected Station Indicator */}
               {isSelected && (
                 <div className="flex items-center gap-2 bg-primary/30 px-2 py-1 border-b border-primary/50">
-                  <span className="text-[10px] font-mono font-semibold text-primary uppercase">
+                  <span className="text-[11px] font-mono font-semibold text-primary uppercase">
                     ✓ Controlling This Station
                   </span>
                 </div>
@@ -168,7 +168,7 @@ const StationNetwork = ({
               {isTracking && !isHighlighted && !isSelected && (
                 <div className="flex items-center gap-2 bg-success/20 px-2 py-1 border-b border-success/50">
                   <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                  <span className="text-[10px] font-mono font-semibold text-success uppercase">
+                  <span className="text-[11px] font-mono font-semibold text-success uppercase">
                     🔗 Tracking ISS
                   </span>
                 </div>
@@ -191,19 +191,19 @@ const StationNetwork = ({
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono font-semibold truncate">
+                      <span className="text-[13px] font-mono font-semibold truncate">
                         {station.name}
                       </span>
                       {queueStats.total > 0 && (
                         <div className="flex items-center gap-1 bg-background/80 rounded px-1.5 py-0.5">
                           <Package className="w-2.5 h-2.5 text-cyan-500" />
-                          <span className="text-[10px] font-mono text-cyan-500">
+                          <span className="text-[11px] font-mono text-cyan-500">
                             {queueStats.total}
                           </span>
                         </div>
                       )}
                     </div>
-                    <div className="text-[10px] text-secondary truncate">
+                    <div className="text-[11px] text-secondary truncate">
                       {station.location}
                     </div>
                   </div>
@@ -211,15 +211,15 @@ const StationNetwork = ({
 
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <div className="text-[10px] text-secondary">
+                    <div className="text-[11px] text-secondary">
                       {isTracking ? 'TRACKING' : 'IDLE'}
                     </div>
                     {isTracking ? (
-                      <div className="text-xs font-mono">
+                      <div className="text-[13px] font-mono">
                         Elev: {station.elevation.toFixed(1)}°
                       </div>
                     ) : (
-                      <div className="text-xs font-mono text-secondary/60">
+                      <div className="text-[13px] font-mono text-secondary/60">
                         Next: {station.nextPassTime}
                       </div>
                     )}
@@ -227,7 +227,7 @@ const StationNetwork = ({
                     {meshConnections.length > 0 && (() => {
                       const connected = getConnectedStations(station.id);
                       return connected.length > 0 ? (
-                        <div className="text-[9px] font-mono text-primary/70 mt-0.5">
+                        <div className="text-[10px] font-mono text-primary/70 mt-0.5">
                           {connected.length} link{connected.length !== 1 ? 's' : ''}
                         </div>
                       ) : null;
@@ -274,7 +274,7 @@ const StationNetwork = ({
                   </div>
                   
                   <div className="flex justify-between items-center mt-1">
-                    <div className="text-[9px] font-mono text-secondary">
+                    <div className="text-[10px] font-mono text-secondary">
                       Bundles: 
                       {queueStats.queued > 0 && (
                         <span className="text-cyan-500 ml-1">
@@ -294,7 +294,7 @@ const StationNetwork = ({
                     </div>
                     
                     {!isTracking && queueStats.queued > 0 && nextHandoff && (
-                      <div className="flex items-center gap-1 text-[9px] font-mono text-secondary">
+                      <div className="flex items-center gap-1 text-[10px] font-mono text-secondary">
                         <span>Next hop:</span>
                         <ArrowRight className="w-2.5 h-2.5" />
                         <span className="text-primary">{nextHandoff.name}</span>
@@ -313,7 +313,7 @@ const StationNetwork = ({
                     const connected = getConnectedStations(station.id);
                     return connected.length > 0 ? (
                       <div>
-                        <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
+                        <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary mb-2">
                           NETWORK CONNECTIONS ({connected.length})
                         </div>
                         <div className="space-y-1">
@@ -322,10 +322,10 @@ const StationNetwork = ({
                             return connectedStation ? (
                               <div key={connectedId} className="flex items-center gap-2 p-1.5 rounded bg-primary/10 border border-primary/20">
                                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                                <span className="text-[10px] font-mono text-primary font-semibold">
+                                <span className="text-[11px] font-mono text-primary font-semibold">
                                   {connectedStation.name}
                                 </span>
-                                <span className="text-[9px] text-secondary ml-auto">
+                                <span className="text-[10px] text-secondary ml-auto">
                                   {connectedStation.id}
                                 </span>
                               </div>
@@ -335,10 +335,10 @@ const StationNetwork = ({
                       </div>
                     ) : (
                       <div>
-                        <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
+                        <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary mb-2">
                           NETWORK CONNECTIONS
                         </div>
-                        <div className="text-[10px] text-secondary/60 font-mono">
+                        <div className="text-[11px] text-secondary/60 font-mono">
                           No direct connections
                         </div>
                       </div>
@@ -348,7 +348,7 @@ const StationNetwork = ({
                   {/* Bundle Queue Details */}
                   {stationQueue.length > 0 && (
                     <div>
-                      <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
+                      <div className="text-[12px] font-semibold tracking-wider uppercase text-secondary mb-2">
                         BUNDLE QUEUE DETAILS
                       </div>
                   <div className="space-y-1 max-h-40 overflow-y-auto">
@@ -364,11 +364,11 @@ const StationNetwork = ({
                         
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-[10px] font-mono text-foreground font-semibold">
+                            <span className="text-[13px] font-mono text-foreground font-semibold">
                               {bundle.bundle_id_short}
                             </span>
                             <span
-                              className="text-[9px] font-mono px-1 py-0.5 rounded"
+                              className="text-[12px] font-mono px-1 py-0.5 rounded"
                               style={{
                                 color: getPriorityColor(bundle.priority),
                                 backgroundColor: `${getPriorityColor(bundle.priority)}20`
@@ -376,7 +376,7 @@ const StationNetwork = ({
                             >
                               {bundle.priority}
                             </span>
-                            <span className={`text-[9px] font-mono ${
+                            <span className={`text-[12px] font-mono ${
                               bundle.status === "DELIVERED" ? "text-success" :
                               bundle.status === "TRANSMITTING" ? "text-amber-500" :
                               "text-secondary"
@@ -384,10 +384,10 @@ const StationNetwork = ({
                               {bundle.status}
                             </span>
                           </div>
-                          <div className="text-[10px] text-secondary truncate">
+                          <div className="text-[13px] text-secondary truncate">
                             {bundle.payload}
                           </div>
-                          <div className="flex items-center gap-2 mt-0.5 text-[9px] text-secondary">
+                          <div className="flex items-center gap-2 mt-0.5 text-[12px] text-secondary">
                             <span>Size: {bundle.size_bytes} bytes ({(bundle.size_bytes / 1024).toFixed(1)} KB)</span>
                             <span>Age: {Math.floor(bundle.age_seconds)}s</span>
                             <span>TTL: {bundle.ttl_hours}h</span>
@@ -429,30 +429,30 @@ const StationNetwork = ({
       <div className="mt-3 pt-3 border-t border-border">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
-            <div className="text-xs font-mono font-semibold text-foreground">
+            <div className="text-[13px] font-mono font-semibold text-foreground">
               {Object.values(dtnQueues).reduce((sum, queue) => sum + queue.length, 0)}
             </div>
-            <div className="text-[9px] text-secondary uppercase tracking-wide">
+            <div className="text-[10px] text-secondary uppercase tracking-wide">
               Total Bundles
             </div>
           </div>
           <div>
-            <div className="text-xs font-mono font-semibold text-cyan-500">
+            <div className="text-[13px] font-mono font-semibold text-cyan-500">
               {Object.values(dtnQueues).reduce((sum, queue) => 
                 sum + queue.filter(b => b.status === "QUEUED").length, 0
               )}
             </div>
-            <div className="text-[9px] text-secondary uppercase tracking-wide">
+            <div className="text-[10px] text-secondary uppercase tracking-wide">
               Queued
             </div>
           </div>
           <div>
-            <div className="text-xs font-mono font-semibold text-success">
+            <div className="text-[13px] font-mono font-semibold text-success">
               {Object.values(dtnQueues).reduce((sum, queue) => 
                 sum + queue.filter(b => b.status === "DELIVERED").length, 0
               )}
             </div>
-            <div className="text-[9px] text-secondary uppercase tracking-wide">
+            <div className="text-[10px] text-secondary uppercase tracking-wide">
               Delivered
             </div>
           </div>

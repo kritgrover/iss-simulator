@@ -54,13 +54,13 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">
+        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary">
           LINK STATUS
         </h3>
         {linkStatus && (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-            <span className="text-xs font-mono text-success">LIVE</span>
+            <span className="text-[13px] font-mono text-success">LIVE</span>
           </div>
         )}
       </div>
@@ -70,13 +70,13 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
             <SignalIcon className={`w-4 h-4 ${signalQuality.color}`} />
-            <span className="text-xs text-secondary">Signal Strength</span>
+            <span className="text-[13px] text-secondary">Signal Strength</span>
           </div>
           <div className="text-right">
-            <div className={`text-xs font-mono font-semibold ${signalQuality.color}`}>
+            <div className={`text-[13px] font-mono font-semibold ${signalQuality.color}`}>
               {signalQuality.level}
             </div>
-            <div className="text-[10px] text-secondary">
+            <div className="text-[11px] text-secondary">
               {signalStrength.toFixed(1)} dBm
             </div>
           </div>
@@ -84,7 +84,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
 
         {/* Progress Bar */}
         <Progress value={signalPercent} className="h-2" />
-        <div className="flex justify-between text-[10px] text-secondary">
+        <div className="flex justify-between text-[11px] text-secondary">
           <span>-120 dBm</span>
           <span>-80 dBm</span>
           <span>-40 dBm</span>
@@ -94,7 +94,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
       {/* Connection State and Latency */}
       <div className="grid grid-cols-2 gap-3 pt-2">
         <div>
-          <div className="text-xs text-secondary mb-1">Connection</div>
+          <div className="text-[13px] text-secondary mb-1">Connection</div>
           <div className="flex items-center gap-2">
             <div 
               className={`w-2 h-2 rounded-full ${
@@ -103,14 +103,14 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
                 "bg-secondary"
               }`}
             />
-            <span className={`text-xs font-mono font-semibold ${getConnectionColor()}`}>
+            <span className={`text-[13px] font-mono font-semibold ${getConnectionColor()}`}>
               {connectionState}
             </span>
           </div>
         </div>
         <div>
-          <div className="text-xs text-secondary mb-1">Latency</div>
-          <div className="text-xs font-mono text-right">
+          <div className="text-[13px] text-secondary mb-1">Latency</div>
+          <div className="text-[13px] font-mono text-right">
             {latency > 0 ? `${latency.toFixed(2)} ms` : '--'}
           </div>
         </div>
@@ -118,8 +118,8 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
 
       {/* Doppler Shift Visualization */}
       <div className="pt-2">
-        <div className="text-xs text-secondary mb-1">Doppler Shift</div>
-        <div className="text-xs font-mono mb-2">
+        <div className="text-[13px] text-secondary mb-1">Doppler Shift</div>
+        <div className="text-[13px] font-mono mb-2">
           {dopplerShift > 0 ? '+' : ''}{dopplerShift.toFixed(3)} kHz
         </div>
 
@@ -133,7 +133,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
           />
 
           {/* Scale markings */}
-          <div className="absolute inset-0 flex justify-between items-center px-2 text-[9px] text-secondary/60 font-mono">
+          <div className="absolute inset-0 flex justify-between items-center px-2 text-[10px] text-secondary/60 font-mono">
             <span>-10</span>
             <span>-5</span>
             <span className="text-secondary">0 kHz</span>
@@ -183,7 +183,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
 
         {/* Direction indicator */}
         <div className="flex justify-center mt-1">
-          <span className={`text-[9px] font-mono ${isApproaching ? 'text-[#00d4ff]' : 'text-[#fbbf24]'}`}>
+          <span className={`text-[10px] font-mono ${isApproaching ? 'text-[#00d4ff]' : 'text-[#fbbf24]'}`}>
             {Math.abs(dopplerShift) > 0.01 
               ? (isApproaching ? '← APPROACHING (Blue Shift)' : 'RECEDING → (Red Shift)')
               : 'STATIONARY'}
@@ -194,7 +194,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
       {/* SNR Display */}
       <div className="pt-2 border-t border-border">
         <div className="flex justify-between items-center">
-          <span className="text-xs text-secondary">Signal-to-Noise Ratio</span>
+          <span className="text-[13px] text-secondary">Signal-to-Noise Ratio</span>
           <div className="flex items-center gap-2">
             <div 
               className={`w-2 h-2 rounded-full ${
@@ -203,7 +203,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
                 'bg-destructive'
               }`}
             />
-            <span className={`text-xs font-mono font-semibold ${
+            <span className={`text-[13px] font-mono font-semibold ${
               snr > 10 ? 'text-success' : 
               snr > 3 ? 'text-amber-500' : 
               'text-destructive'
@@ -212,7 +212,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
             </span>
           </div>
         </div>
-        <div className="mt-1 text-[10px] text-secondary">
+        <div className="mt-1 text-[11px] text-secondary">
           {snr > 10 ? 'Excellent link quality' : 
            snr > 3 ? 'Marginal link quality' : 
            'Link unusable'}

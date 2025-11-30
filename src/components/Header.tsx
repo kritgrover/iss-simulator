@@ -1,5 +1,4 @@
-import { Circle, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Circle } from "lucide-react";
 import { useMET } from "@/hooks/useMET";
 
 interface HeaderProps {
@@ -37,9 +36,6 @@ const Header = ({ isConnected, connectionError }: HeaderProps) => {
             </>
           )}
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <Settings className="h-4 w-4" />
-        </Button>
       </div>
     </header>
   );

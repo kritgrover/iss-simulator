@@ -234,7 +234,7 @@ const TrafficFlowMonitor = ({
       <div className="mb-4 space-y-3">
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">UPLINK</span>
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">UPLINK</span>
             <span className="text-xs font-mono text-muted-foreground">
               {uplinkBandwidth.toFixed(1)} kbps / 200 kbps
             </span>
@@ -248,7 +248,7 @@ const TrafficFlowMonitor = ({
         </div>
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">DOWNLINK</span>
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">DOWNLINK</span>
             <span className="text-xs font-mono text-muted-foreground">
               {downlinkBandwidth.toFixed(1)} kbps / 200 kbps
             </span>
@@ -263,12 +263,12 @@ const TrafficFlowMonitor = ({
 
         {visibleLinks && visibleLinks.length > 1 && (
           <div className="pt-2 border-t border-border/30">
-            <div className="text-[9px] text-secondary/80 mb-1">
+            <div className="text-[11px] text-secondary/80 mb-1">
               Active Links ({visibleLinks.length} stations):
             </div>
             <div className="space-y-1">
               {visibleLinks.map(link => (
-                <div key={link.station_id} className="flex justify-between items-center text-[9px]">
+                <div key={link.station_id} className="flex justify-between items-center text-[11px]">
                   <span className="text-secondary uppercase font-mono">{link.station_name}</span>
                   <span className="text-cyan-400 font-mono">{link.data_rate_kbps.toFixed(1)} kbps</span>
                 </div>
@@ -281,7 +281,7 @@ const TrafficFlowMonitor = ({
       {/* 2. Bundle Queue Visualization*/}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
           <span className="text-xs font-mono text-muted-foreground">
             Queue: {allQueuedBundles.length} bundles
           </span>
@@ -304,7 +304,7 @@ const TrafficFlowMonitor = ({
             <span className="text-xs text-muted-foreground/50 italic">No bundles in queue</span>
           )}
         </div>
-        <div className="flex justify-between text-[10px] text-muted-foreground">
+        <div className="flex justify-between text-[11px] text-muted-foreground">
           <span>Avg Queue Time: {queueStats.avgTime} ms</span>
           <span>Network Depth: {queueStats.maxDepth} bundles</span>
         </div>
@@ -313,11 +313,11 @@ const TrafficFlowMonitor = ({
       {/* 3. Throughput Graph Over Time*/}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
-          <div className="text-[10px] font-mono text-muted-foreground space-y-0.5">
+          <div className="text-[11px] font-mono text-muted-foreground space-y-0.5">
             <div className="text-cyan-400">Uplink: {uplinkBandwidth.toFixed(1)} kbps</div>
             <div className="text-green-400">Downlink: {downlinkBandwidth.toFixed(1)} kbps</div>
           </div>
-          <div className="flex gap-3 text-[10px]">
+          <div className="flex gap-3 text-[11px]">
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 bg-cyan-500 rounded-sm" />
               <span className="text-muted-foreground">Uplink</span>
@@ -334,15 +334,15 @@ const TrafficFlowMonitor = ({
             <XAxis 
               dataKey="time" 
               stroke="#6b7280" 
-              style={{ fontSize: '10px' }}
+              style={{ fontSize: '11px' }}
               tick={{ fill: '#6b7280' }}
             />
             <YAxis 
               stroke="#6b7280" 
-              style={{ fontSize: '10px' }}
+              style={{ fontSize: '11px' }}
               tick={{ fill: '#6b7280' }}
               domain={[0, 200]}
-              label={{ value: 'kbps', angle: -90, position: 'insideLeft', style: { fontSize: '10px', fill: '#6b7280' } }}
+              label={{ value: 'kbps', angle: -90, position: 'insideLeft', style: { fontSize: '11px', fill: '#6b7280' } }}
             />
             <Line 
               type="monotone" 
@@ -366,7 +366,7 @@ const TrafficFlowMonitor = ({
 
       {/* Last 5 Delivered Bundles History */}
       <div className="p-3 bg-[#1a1d29] rounded-lg">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-3">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">
           TRANSMISSION HISTORY (LAST 5 DELIVERED)
         </div>
         <div className="space-y-3">
@@ -387,11 +387,11 @@ const TrafficFlowMonitor = ({
                       className="w-2 h-2 rounded-full" 
                       style={{ backgroundColor: getPriorityColor(bundle.priority) }}
                     />
-                    <span className="text-[10px] font-mono text-foreground font-semibold">
+                    <span className="text-[11px] font-mono text-foreground font-semibold">
                       {bundle.bundle_id_short}
                     </span>
                     <span
-                      className="text-[9px] font-mono px-1 py-0.5 rounded"
+                      className="text-[11px] font-mono px-1 py-0.5 rounded"
                       style={{
                         color: getPriorityColor(bundle.priority),
                         backgroundColor: `${getPriorityColor(bundle.priority)}20`
@@ -404,7 +404,7 @@ const TrafficFlowMonitor = ({
                 </div>
 
                 {/* Message Payload */}
-                <div className="mb-2 text-[10px] text-secondary italic truncate">
+                <div className="mb-2 text-[11px] text-secondary italic truncate">
                   "{bundle.payload}"
                 </div>
 
@@ -412,7 +412,7 @@ const TrafficFlowMonitor = ({
                 <div className="flex items-center gap-1 mb-2 flex-wrap">
                   {bundle.hops.map((hop, idx) => (
                     <div key={idx} className="flex items-center gap-1">
-                      <span className="text-[9px] text-foreground uppercase font-mono bg-background/80 px-1.5 py-0.5 rounded">
+                      <span className="text-[11px] text-foreground uppercase font-mono bg-background/80 px-1.5 py-0.5 rounded">
                         {hop}
                       </span>
                       {idx < bundle.hops.length - 1 && (
@@ -423,7 +423,7 @@ const TrafficFlowMonitor = ({
                 </div>
 
                 {/* Stats: Size, Time, Created */}
-                <div className="grid grid-cols-3 gap-2 text-[9px] text-secondary">
+                <div className="grid grid-cols-3 gap-2 text-[11px] text-secondary">
                   <div className="flex items-center gap-1">
                     <span className="text-secondary/60">Size:</span>
                     <span className="text-foreground font-mono">
