@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, CheckCircle, XCircle, Clock, Package, Zap } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ProtocolStack from "./ProtocolStack";
 import { DTNBundle } from "@/types/dtnBundle";
 
@@ -30,6 +30,7 @@ interface MessageExchangeProps {
 type MessageMode = "TCP" | "DTN";
 
 interface Message {
+  id: number;
   text: string;
   success: boolean;
   time: string;
@@ -53,11 +54,13 @@ const MessageExchange = ({
   custodyAcks = []
 }: MessageExchangeProps) => {
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    { text: "ISS> Telemetry packet received", success: true, time: "14:30:12", station: "Toronto", mode: "TCP" },
-    { text: "GND> Command acknowledged", success: true, time: "14:30:15", station: "Toronto", mode: "TCP" },
-    { text: "ISS> System status nominal", success: true, time: "14:31:02", station: "Toronto", mode: "TCP" },
-  ]);
+  // Initialize with empty array - will be populated on mount with current time
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [typingProgress, setTypingProgress] = useState<Record<number, number>>({});
+  const [isInitialized, setIsInitialized] = useState(false);
+  const messageIdCounter = useRef(0);
+  const messagesRef = useRef<Message[]>([]);
+  const initializedMessageIds = useRef<Set<number>>(new Set());
   const [protocolDirection, setProtocolDirection] = useState<'uplink' | 'downlink' | null>(null);
   const [mode, setMode] = useState<MessageMode>("TCP");
   const [bundlePriority, setBundlePriority] = useState<"EXPEDITED" | "NORMAL" | "BULK">("NORMAL");
@@ -69,16 +72,117 @@ const MessageExchange = ({
   const stationQueue = dtnQueues?.[activeStationId] || [];
   const queuedBundles = stationQueue.filter(b => b.status === "QUEUED").slice(0, 5);
 
+  // Initialize first 3 messages on mount with current time
+  useEffect(() => {
+    if (!isInitialized) {
+      const currentTime = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const initialMessages: Message[] = [
+        { 
+          id: messageIdCounter.current++, 
+          text: "ISS> Telemetry packet received", 
+          success: true, 
+          time: currentTime, 
+          station: "Toronto", 
+          mode: "TCP" 
+        },
+        { 
+          id: messageIdCounter.current++, 
+          text: "GND> Command acknowledged", 
+          success: true, 
+          time: currentTime, 
+          station: "Toronto", 
+          mode: "TCP" 
+        },
+        { 
+          id: messageIdCounter.current++, 
+          text: "ISS> System status nominal", 
+          success: true, 
+          time: currentTime, 
+          station: "Toronto", 
+          mode: "TCP" 
+        },
+      ];
+      setMessages(initialMessages);
+      messagesRef.current = initialMessages;
+      setIsInitialized(true);
+      
+      // Mark initial messages as initialized and stagger the typing start
+      initialMessages.forEach((msg, idx) => {
+        initializedMessageIds.current.add(msg.id);
+        setTimeout(() => {
+          setTypingProgress(prev => ({
+            ...prev,
+            [msg.id]: 0
+          }));
+        }, idx * 200 * (idx + 1)); // Stagger: 0ms, 400ms, 1200ms
+      });
+    }
+  }, [isInitialized]);
+
+  // Handle typing animations for all messages
+  useEffect(() => {
+    const typingSpeed = 30; // milliseconds per character
+    let interval: NodeJS.Timeout | null = null;
+
+    // Initialize typing for new messages
+    messages.forEach(msg => {
+      if (!initializedMessageIds.current.has(msg.id)) {
+        initializedMessageIds.current.add(msg.id);
+        setTypingProgress(prev => ({
+          ...prev,
+          [msg.id]: 0
+        }));
+      }
+    });
+
+    // Check if any message needs typing
+    const needsTyping = messages.some(msg => {
+      const currentProgress = typingProgress[msg.id] ?? 0;
+      return currentProgress < msg.text.length;
+    });
+
+    if (needsTyping) {
+      interval = setInterval(() => {
+        setTypingProgress(prev => {
+          const updated = { ...prev };
+          let hasUpdates = false;
+
+          messages.forEach(msg => {
+            const current = updated[msg.id] ?? 0;
+            if (current < msg.text.length) {
+              updated[msg.id] = current + 1;
+              hasUpdates = true;
+            }
+          });
+
+          return hasUpdates ? updated : prev;
+        });
+      }, typingSpeed);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [messages, typingProgress]);
+
   // Add handoff message when handoff occurs
   useEffect(() => {
     if (handoffCount > 0) {
-      setMessages(prev => [...prev, {
+      const newMessage: Message = {
+        id: messageIdCounter.current++,
         text: `○ Handoff completed to ${activeStationId.toUpperCase()}`,
         success: true,
         time: new Date().toLocaleTimeString('en-US', { hour12: false }),
         station: activeStationId,
         mode: "TCP"
-      }]);
+      };
+      setMessages(prev => {
+        const updated = [...prev, newMessage];
+        messagesRef.current = updated;
+        return updated;
+      });
     }
   }, [handoffCount, activeStationId]);
 
@@ -88,11 +192,12 @@ const MessageExchange = ({
       const interval = setInterval(() => {
         const deliveredBundles = stationQueue.filter(b => 
           b.status === "DELIVERED" && 
-          !messages.some(m => m.bundleId === b.bundle_id)
+          !messagesRef.current.some(m => m.bundleId === b.bundle_id)
         );
 
         deliveredBundles.forEach(bundle => {
-          setMessages(prev => [...prev, {
+          const newMessage: Message = {
+            id: messageIdCounter.current++,
             text: `[${bundle.source_station.toUpperCase()}] Bundle delivered: ${bundle.payload}`,
             success: true,
             time: new Date().toLocaleTimeString('en-US', { hour12: false }),
@@ -101,13 +206,18 @@ const MessageExchange = ({
             bundleId: bundle.bundle_id_short,
             priority: bundle.priority,
             status: "DELIVERED"
-          }]);
+          };
+          setMessages(prev => {
+            const updated = [...prev, newMessage];
+            messagesRef.current = updated;
+            return updated;
+          });
         });
       }, 2000);
 
       return () => clearInterval(interval);
     }
-  }, [mode, stationQueue, messages]);
+  }, [mode, stationQueue]);
 
   // Process custody ACKs
   useEffect(() => {
@@ -119,20 +229,25 @@ const MessageExchange = ({
         
         setMessages(prev => {
           // Avoid duplicate ACKs
-          if (prev.some(m => m.isAck && m.bundleId === ack.bundle_id_short && m.time === new Date(ack.timestamp).toLocaleTimeString('en-US', { hour12: false }))) {
+          const ackTime = new Date(ack.timestamp).toLocaleTimeString('en-US', { hour12: false });
+          if (prev.some(m => m.isAck && m.bundleId === ack.bundle_id_short && m.time === ackTime)) {
             return prev;
           }
           
-          return [...prev, {
+          const newMessage: Message = {
+            id: messageIdCounter.current++,
             text: ackText,
             success: true,
-            time: new Date(ack.timestamp).toLocaleTimeString('en-US', { hour12: false }),
+            time: ackTime,
             station: ack.to_station,
             mode: "DTN",
             bundleId: ack.bundle_id_short,
             isAck: true,
             ackType: ack.ack_type
-          }];
+          };
+          const updated = [...prev, newMessage];
+          messagesRef.current = updated;
+          return updated;
         });
       });
     }
@@ -147,37 +262,55 @@ const MessageExchange = ({
     if (mode === "TCP") {
       // TCP Mode - requires Toronto to be active
       if (!isTorontoActive) {
-        setMessages(prev => [...prev, {
+        const newMessage: Message = {
+          id: messageIdCounter.current++,
           text: `[${stationName}] GND> ${message}`,
           success: false,
           time: timestamp,
           station: activeStationId,
           mode: "TCP"
-        }]);
+        };
+        setMessages(prev => {
+          const updated = [...prev, newMessage];
+          messagesRef.current = updated;
+          return updated;
+        });
         setMessage("");
         return;
       }
 
       setProtocolDirection('uplink');
       
-      setMessages(prev => [...prev, {
+      const uplinkMessage: Message = {
+        id: messageIdCounter.current++,
         text: `[${stationName}] GND> ${message}`,
         success: true,
         time: timestamp,
         station: activeStationId,
         mode: "TCP"
-      }]);
+      };
+      setMessages(prev => {
+        const updated = [...prev, uplinkMessage];
+        messagesRef.current = updated;
+        return updated;
+      });
       setMessage("");
 
       setTimeout(() => {
         setProtocolDirection('downlink');
-        setMessages(prev => [...prev, {
+        const ackMessage: Message = {
+          id: messageIdCounter.current++,
           text: `[${stationName}] ISS> ACK: ${message.substring(0, 20)}...`,
           success: true,
           time: new Date().toLocaleTimeString('en-US', { hour12: false }),
           station: activeStationId,
           mode: "TCP"
-        }]);
+        };
+        setMessages(prev => {
+          const updated = [...prev, ackMessage];
+          messagesRef.current = updated;
+          return updated;
+        });
       }, 1200);
 
       setTimeout(() => {
@@ -205,7 +338,8 @@ const MessageExchange = ({
 
         if (result.success) {
           const bundle = result.bundle;
-          setMessages(prev => [...prev, {
+          const newMessage: Message = {
+            id: messageIdCounter.current++,
             text: `[${stationName}] Bundle created: ${message}`,
             success: true,
             time: timestamp,
@@ -214,25 +348,42 @@ const MessageExchange = ({
             bundleId: bundle.bundle_id_short,
             priority: bundle.priority,
             status: isConnected ? "TRANSMITTING" : "QUEUED"
-          }]);
+          };
+          setMessages(prev => {
+            const updated = [...prev, newMessage];
+            messagesRef.current = updated;
+            return updated;
+          });
         } else {
-          setMessages(prev => [...prev, {
+          const newMessage: Message = {
+            id: messageIdCounter.current++,
             text: `[${stationName}] Failed to create bundle: ${result.error}`,
             success: false,
             time: timestamp,
             station: activeStationId,
             mode: "DTN"
-          }]);
+          };
+          setMessages(prev => {
+            const updated = [...prev, newMessage];
+            messagesRef.current = updated;
+            return updated;
+          });
         }
       } catch (error) {
         console.error('Error creating bundle:', error);
-        setMessages(prev => [...prev, {
+        const newMessage: Message = {
+          id: messageIdCounter.current++,
           text: `[${stationName}] Error creating bundle`,
           success: false,
           time: timestamp,
           station: activeStationId,
           mode: "DTN"
-        }]);
+        };
+        setMessages(prev => {
+          const updated = [...prev, newMessage];
+          messagesRef.current = updated;
+          return updated;
+        });
       }
       
       setMessage("");
@@ -344,30 +495,40 @@ const MessageExchange = ({
 
         {/* Message Log */}
         <div className="flex-1 terminal p-3 overflow-y-auto space-y-2 mb-3">
-          {messages.map((msg, idx) => (
-            <div 
-              key={idx} 
-              className="flex items-start gap-2 text-sm font-mono"
-            >
-              {getStatusIcon(msg)}
-              <div className="flex-1 min-w-0">
-                <span className={`${
-                  msg.isAck ? 'text-cyan-400' :
-                  msg.success ? 'text-terminal-text' : 'text-destructive'
-                }`}>
-                  {msg.text}
-                </span>
-                {/* Only show bundle details for non-ACK messages */}
-                {msg.bundleId && !msg.isAck && (
-                  <div className="text-xs text-secondary mt-1">
-                    [Bundle: {msg.bundleId}] [Priority: {msg.priority}] [TTL: 24h]
-                    {msg.status && ` [${msg.status}]`}
-                  </div>
-                )}
+          {messages.map((msg, idx) => {
+            const displayedText = typingProgress[msg.id] !== undefined 
+              ? msg.text.substring(0, typingProgress[msg.id])
+              : '';
+            const isTyping = typingProgress[msg.id] !== undefined && typingProgress[msg.id] < msg.text.length;
+            
+            return (
+              <div 
+                key={msg.id} 
+                className="flex items-start gap-2 text-sm font-mono"
+              >
+                {getStatusIcon(msg)}
+                <div className="flex-1 min-w-0">
+                  <span className={`${
+                    msg.isAck ? 'text-cyan-400' :
+                    msg.success ? 'text-terminal-text' : 'text-destructive'
+                  }`}>
+                    {displayedText}
+                    {isTyping && (
+                      <span className="inline-block w-2 h-4 bg-current animate-pulse ml-0.5" />
+                    )}
+                  </span>
+                  {/* Only show bundle details for non-ACK messages */}
+                  {msg.bundleId && !msg.isAck && !isTyping && (
+                    <div className="text-xs text-secondary mt-1">
+                      [Bundle: {msg.bundleId}] [Priority: {msg.priority}] [TTL: 24h]
+                      {msg.status && ` [${msg.status}]`}
+                    </div>
+                  )}
+                </div>
+                <span className="text-terminal-text/60 text-xs flex-shrink-0">{msg.time}</span>
               </div>
-              <span className="text-terminal-text/60 text-xs flex-shrink-0">{msg.time}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* DTN Bundle Queue */}
