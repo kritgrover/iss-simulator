@@ -3,11 +3,11 @@
 ### Demo Link: [ISS Simulator Demo](https://youtu.be/nzh2T8YPaEc?si=2Gu9HnW4LvIJG84V)
 
 ## Contributers
-| Name          | UTORid   | Student Number |
-|---------------|----------|----------------|
-| Krit Grover   | groverk3 | 1008093643     |
-| Ansh Aneel    | aneelans | 1008528130     |
-| Ashwin Mallik | mallika7 | 1008329729     |
+| Name          | UTORid   | Student Number | Email                         |
+|---------------|----------|----------------|-------------------------------|
+| Krit Grover   | groverk3 | 1008093643     | krit.grover@mail.utoronto.ca  |
+| Ansh Aneel    | aneelans | —              | ansh.aneel@mail.utoronto.ca   |
+| Ashwin Mallik | mallika7 | 1008329729     | ashwin.mallik@mail.utoronto.ca |
 
 
 ## Introduction
