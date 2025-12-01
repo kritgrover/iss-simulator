@@ -6,8 +6,8 @@
 | Name          | UTORid   | Student Number | Email                         |
 |---------------|----------|----------------|-------------------------------|
 | Krit Grover   | groverk3 | 1008093643     | krit.grover@mail.utoronto.ca  |
-| Ansh Aneel    | aneelans | —              | ansh.aneel@mail.utoronto.ca   |
-| Ashwin Mallik | mallika7 | 1008329729     | ashwin.mallik@mail.utoronto.ca |
+| Ansh Aneel    | aneelans | 1008528130     | ansh.aneel@mail.utoronto.ca   |
+| Ashwin Mallik | mallika7 | 1008329729     | ashwin.mallik@mail.utoronto.ca|
 
 
 ## Introduction
