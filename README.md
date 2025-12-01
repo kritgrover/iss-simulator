@@ -117,7 +117,6 @@ sudo -E USE_MININET=true python3 main.py
 Note: Use sudo -E to preserve environment variables when enabling Mininet.
 
 Frontend:
-Run as normal:
 ```bash
 npm run dev
 ```
