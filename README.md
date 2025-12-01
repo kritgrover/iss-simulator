@@ -89,6 +89,7 @@ sudo apt-get install mininet openvswitch-switch
 ## Running the Application
 ### Non-Mininet Mode (Simulation Only)
 This mode runs the backend using pure Python simulation for logic, without creating virtual network interfaces. Ideal for development on non-Linux systems or for testing logic.
+
 Backend:
 ```bash
 # From the root directory
@@ -97,6 +98,7 @@ source venv/bin/activate
 python main.py
 ```
 The server will start on http://0.0.0.0:8000.
+
 Frontend:
 ```bash
 # From the root directory
@@ -104,7 +106,8 @@ npm run dev
 ```
 Access the application at http://localhost:8080.
 ### Mininet Mode (Network Emulation)
-This mode uses Mininet to create a realistic network topology with virtual hosts, switches, and links that have dynamic bandwidth, delay, and loss properties based on the physics simulation.
+This mode uses Mininet to create a realistic network topology with virtual hosts, switches, and links that have dynamic bandwidth, delay, and loss properties based on the physics simulation.\
+
 Backend (Requires Root/Sudo):
 ```bash
 # From the root directory
@@ -112,6 +115,7 @@ cd backend
 sudo -E USE_MININET=true python3 main.py
 ```
 Note: Use sudo -E to preserve environment variables when enabling Mininet.
+
 Frontend:
 Run as normal:
 ```bash
