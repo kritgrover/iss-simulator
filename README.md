@@ -2,14 +2,6 @@
 
 ### Demo Link: [ISS Simulator Demo](https://youtu.be/nzh2T8YPaEc?si=2Gu9HnW4LvIJG84V)
 
-## Contributers
-| Name          | UTORid   | Student Number | Email                         |
-|---------------|----------|----------------|-------------------------------|
-| Krit Grover   | groverk3 | 1008093643     | krit.grover@mail.utoronto.ca  |
-| Ansh Aneel    | aneelans | 1008528130     | ansh.aneel@mail.utoronto.ca   |
-| Ashwin Mallik | mallika7 | 1008329729     | ashwin.mallik@mail.utoronto.ca|
-
-
 ## Introduction
 
 This project is a comprehensive simulation of the International Space Station's (ISS) communication systems, focusing on the implementation of Delay/Disruption Tolerant Networking (DTN) protocols. It provides a real-time visualization of orbital mechanics, link budget calculations, and the "store-and-forward" data transmission paradigm used in space communications. The simulator is designed to demonstrate how data is reliably transmitted between ground stations and the ISS despite intermittent connectivity, high latency, and variable link quality.
