@@ -51,12 +51,16 @@ class DatabaseManager:
             
             # Create bundles table
             # We store complex objects like hops and route as JSON strings
+            # encrypted_payload stores the encrypted payload (base64)
+            # payload_hash stores hash for display purposes
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS bundles (
                 bundle_id TEXT PRIMARY KEY,
                 source_station TEXT,
                 destination_station TEXT,
                 payload TEXT,
+                encrypted_payload TEXT,
+                payload_hash TEXT,
                 priority TEXT,
                 status TEXT,
                 created_at TEXT,
@@ -69,6 +73,12 @@ class DatabaseManager:
                 size_bytes INTEGER,
                 checksum INTEGER,
                 failure_reason TEXT,
+                pcb TEXT,
+                pib TEXT,
+                bab TEXT,
+                is_fragmented INTEGER,
+                fragment_count INTEGER,
+                fragment_number INTEGER,
                 updated_at TEXT
             )
             ''')
@@ -89,6 +99,8 @@ class DatabaseManager:
                 source_station TEXT,
                 destination_station TEXT,
                 payload TEXT,
+                encrypted_payload TEXT,
+                payload_hash TEXT,
                 priority TEXT,
                 status TEXT,
                 created_at TEXT,
@@ -101,6 +113,12 @@ class DatabaseManager:
                 size_bytes INTEGER,
                 checksum INTEGER,
                 failure_reason TEXT,
+                pcb TEXT,
+                pib TEXT,
+                bab TEXT,
+                is_fragmented INTEGER,
+                fragment_count INTEGER,
+                fragment_number INTEGER,
                 updated_at TEXT
             )
             ''')
@@ -123,19 +141,27 @@ class DatabaseManager:
         hops_json = json.dumps(bundle_data.get('hops', []))
         route_json = json.dumps(bundle_data.get('route', []))
         
+        # Prepare security blocks as JSON
+        pcb_json = json.dumps(bundle_data.get('pcb')) if bundle_data.get('pcb') else None
+        pib_json = json.dumps(bundle_data.get('pib')) if bundle_data.get('pib') else None
+        bab_json = json.dumps(bundle_data.get('bab')) if bundle_data.get('bab') else None
+        
         try:
             cursor.execute('''
             INSERT OR REPLACE INTO bundles (
                 bundle_id, source_station, destination_station, payload, 
-                priority, status, created_at, ttl_hours, current_custodian, 
-                forwarded_to, delivered_at, hops, route, size_bytes, 
-                checksum, failure_reason, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                encrypted_payload, payload_hash, priority, status, created_at, 
+                ttl_hours, current_custodian, forwarded_to, delivered_at, 
+                hops, route, size_bytes, checksum, failure_reason, 
+                pcb, pib, bab, is_fragmented, fragment_count, fragment_number, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 bundle_data['bundle_id'],
                 bundle_data['source_station'],
                 bundle_data['destination_station'],
-                bundle_data['payload'],
+                bundle_data.get('payload', ''),  # Display hash
+                bundle_data.get('encrypted_payload', ''),  # Actual encrypted payload
+                bundle_data.get('payload_hash', ''),
                 str(bundle_data['priority']), # Ensure enum string value
                 str(bundle_data['status']),   # Ensure enum string value
                 bundle_data['created_at'],
@@ -148,6 +174,12 @@ class DatabaseManager:
                 bundle_data.get('size_bytes', 0),
                 bundle_data.get('checksum', 0),
                 bundle_data.get('failure_reason'),
+                pcb_json,
+                pib_json,
+                bab_json,
+                1 if bundle_data.get('is_fragmented', False) else 0,
+                bundle_data.get('fragment_count', 1),
+                bundle_data.get('fragment_number', 0),
                 now
             ))
             conn.commit()
@@ -248,9 +280,19 @@ class DatabaseManager:
                 bundle_dict = dict(row)
                 # Parse JSON fields
                 try:
-                    bundle_dict['hops'] = json.loads(bundle_dict['hops']) if bundle_dict['hops'] else []
-                    bundle_dict['route'] = json.loads(bundle_dict['route']) if bundle_dict['route'] else []
-                except json.JSONDecodeError:
+                    bundle_dict['hops'] = json.loads(bundle_dict['hops']) if bundle_dict.get('hops') else []
+                    bundle_dict['route'] = json.loads(bundle_dict['route']) if bundle_dict.get('route') else []
+                    # Parse security blocks
+                    if bundle_dict.get('pcb'):
+                        bundle_dict['pcb'] = json.loads(bundle_dict['pcb']) if isinstance(bundle_dict['pcb'], str) else bundle_dict['pcb']
+                    if bundle_dict.get('pib'):
+                        bundle_dict['pib'] = json.loads(bundle_dict['pib']) if isinstance(bundle_dict['pib'], str) else bundle_dict['pib']
+                    if bundle_dict.get('bab'):
+                        bundle_dict['bab'] = json.loads(bundle_dict['bab']) if isinstance(bundle_dict['bab'], str) else bundle_dict['bab']
+                    # Convert boolean fields
+                    bundle_dict['is_fragmented'] = bool(bundle_dict.get('is_fragmented', 0))
+                except json.JSONDecodeError as e:
+                    print(f"⚠️  JSON decode error for bundle {bundle_dict.get('bundle_id')}: {e}")
                     bundle_dict['hops'] = []
                     bundle_dict['route'] = []
                 

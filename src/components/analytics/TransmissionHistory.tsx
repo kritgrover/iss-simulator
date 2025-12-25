@@ -109,9 +109,9 @@ const TransmissionHistory = ({ deliveredBundles = [] }: TransmissionHistoryProps
                 <CheckCircle className="w-3 h-3 text-success" />
               </div>
 
-              {/* Message Payload */}
-              <div className="mb-2 text-[11px] text-secondary italic truncate">
-                "{bundle.payload}"
+              {/* Message Payload - Show encrypted hash */}
+              <div className="mb-2 text-[11px] text-secondary italic truncate font-mono">
+                🔐 {bundle.payload_hash_short || bundle.payload || 'encrypted'}
               </div>
 
               {/* Path Visualization */}

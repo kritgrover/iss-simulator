@@ -268,7 +268,7 @@ const StationNetwork = ({
                             backgroundColor: getPriorityColor(bundle.priority),
                             opacity: 0.8
                           }}
-                          title={`${bundle.priority}: ${bundle.payload.substring(0, 30)}`}
+                          title={`${bundle.priority}: ${bundle.payload_hash_short || bundle.payload || 'encrypted'}`}
                         />
                       ))}
                   </div>
@@ -384,8 +384,8 @@ const StationNetwork = ({
                               {bundle.status}
                             </span>
                           </div>
-                          <div className="text-[13px] text-secondary truncate">
-                            {bundle.payload}
+                          <div className="text-[13px] text-secondary truncate font-mono">
+                            🔐 {bundle.payload_hash_short || bundle.payload || 'encrypted'}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5 text-[12px] text-secondary">
                             <span>Size: {bundle.size_bytes} bytes ({(bundle.size_bytes / 1024).toFixed(1)} KB)</span>

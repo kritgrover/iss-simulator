@@ -1,10 +1,14 @@
 import uuid
 import zlib
+import hashlib
+import json
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from enum import Enum
 from database import DatabaseManager
+from bsp_security import BSPSecurityManager, BundleAuthenticationBlock, PayloadConfidentialityBlock, PayloadIntegrityBlock
+from bundle_fragmentation import BundleFragmentationManager, BundleFragment
 
 class BundlePriority(str, Enum):
     EXPEDITED = "EXPEDITED"  # Red
@@ -24,7 +28,8 @@ class DTNBundle:
     bundle_id: str
     source_station: str
     destination_station: str  # "ISS" or station name
-    payload: str
+    encrypted_payload: str  # Encrypted payload (base64)
+    payload_hash: str  # Hash of encrypted payload for display
     priority: BundlePriority
     created_at: datetime
     ttl_hours: int = 24
@@ -36,21 +41,30 @@ class DTNBundle:
     route: List[str] = field(default_factory=list)  # Planned route (source -> ... -> destination)
     size_bytes: int = 0
     checksum: int = 0
+    # Security blocks
+    pcb: Optional[PayloadConfidentialityBlock] = None  # Payload Confidentiality Block
+    pib: Optional[PayloadIntegrityBlock] = None  # Payload Integrity Block
+    bab: Optional[BundleAuthenticationBlock] = None  # Bundle Authentication Block (last applied)
+    # Fragmentation
+    is_fragmented: bool = False
+    fragment_count: int = 1
+    fragment_number: int = 0  # 0 if not fragmented, fragment index if fragmented
     
     def __post_init__(self):
         if self.size_bytes == 0:
-            # Calculate size based on payload + headers
-            payload_size = len(self.payload.encode('utf-8'))
-            header_overhead = 200  # DTN header overhead (100-500 bytes typical)
-            self.size_bytes = payload_size + header_overhead
+            # Calculate size based on encrypted payload + headers + security blocks
+            payload_size = len(self.encrypted_payload.encode('utf-8'))
+            header_overhead = 200  # DTN header overhead
+            security_overhead = 300  # Security blocks overhead (BAB, PCB, PIB)
+            self.size_bytes = payload_size + header_overhead + security_overhead
         
-        # Calculate checksum if not already set
+        # Calculate checksum if not already set (on encrypted payload)
         if self.checksum == 0:
             self.checksum = self.calculate_checksum()
     
     def calculate_checksum(self) -> int:
-        """Calculate CRC32 checksum of bundle payload"""
-        data = self.payload.encode('utf-8')
+        """Calculate CRC32 checksum of encrypted bundle payload"""
+        data = self.encrypted_payload.encode('utf-8')
         return zlib.crc32(data) & 0xffffffff  # Ensure non-negative 32-bit
     
     def verify_checksum(self, received_checksum: int) -> bool:
@@ -63,12 +77,15 @@ class DTNBundle:
         return age > timedelta(hours=self.ttl_hours)
     
     def to_dict(self) -> Dict:
+        """Convert to dictionary for API/DB - does NOT include decrypted payload"""
         return {
             "bundle_id": self.bundle_id,
             "bundle_id_short": self.bundle_id[:8],
             "source_station": self.source_station,
             "destination_station": self.destination_station,
-            "payload": self.payload,
+            "payload": self.payload_hash[:16] + "...",  # Show only hash prefix for security
+            "payload_hash": self.payload_hash,
+            "payload_hash_short": self.payload_hash[:16],
             "priority": self.priority.value,
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
@@ -80,7 +97,13 @@ class DTNBundle:
             "route": self.route,
             "age_seconds": (datetime.now(timezone.utc) - self.created_at).total_seconds(),
             "size_bytes": self.size_bytes,
-            "checksum": self.checksum
+            "checksum": self.checksum,
+            "is_fragmented": self.is_fragmented,
+            "fragment_count": self.fragment_count,
+            "fragment_number": self.fragment_number,
+            "pcb": self.pcb.to_dict() if self.pcb else None,
+            "pib": self.pib.to_dict() if self.pib else None,
+            "bab": self.bab.to_dict() if self.bab else None
         }
 
 @dataclass
@@ -156,8 +179,14 @@ class DTNBundleManager:
         self.mesh_connections = mesh_connections or []  # List of (station1, station2) tuples
         self.db_manager = DatabaseManager()
         
+        # BSP Security and Fragmentation
+        self.bsp_security = BSPSecurityManager()
+        self.fragmentation_manager = BundleFragmentationManager()
+        
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
         print(f"   ACK timeout: {self.ACK_TIMEOUT_SECONDS}s, Max retries: {self.MAX_RETRIES}")
+        print(f"   🔐 BSP Security enabled (BAB, PCB, PIB)")
+        print(f"   📦 Bundle fragmentation enabled")
         
         # Load persistent state
         self._load_state()
@@ -186,11 +215,70 @@ class DTNBundleManager:
                 except ValueError:
                     pass
                 
+                # Handle encrypted payload (new format) or plaintext (legacy)
+                encrypted_payload = bundle_data.get('encrypted_payload')
+                payload_hash = bundle_data.get('payload_hash')
+                
+                if not encrypted_payload:
+                    # Legacy bundle - payload is plaintext, need to encrypt it
+                    # This shouldn't happen in normal operation, but handle gracefully
+                    plaintext = bundle_data.get('payload', '')
+                    if plaintext and not plaintext.startswith('encrypted:'):
+                        # Encrypt legacy payload
+                        try:
+                            encrypted_payload, pcb = self.bsp_security.encrypt_payload(
+                                plaintext, bundle_data['source_station']
+                            )
+                            payload_hash = self.bsp_security.get_payload_hash(encrypted_payload)
+                            print(f"⚠️  Legacy bundle {bundle_data['bundle_id'][:8]} - encrypted on load")
+                        except Exception as e:
+                            print(f"❌ Error encrypting legacy bundle: {e}")
+                            continue
+                    else:
+                        # Already encrypted or empty
+                        encrypted_payload = plaintext
+                        if not payload_hash:
+                            payload_hash = self.bsp_security.get_payload_hash(encrypted_payload) if encrypted_payload else ""
+                
+                # Reconstruct security blocks
+                pcb = None
+                pib = None
+                bab = None
+                
+                if bundle_data.get('pcb'):
+                    pcb_data = bundle_data['pcb'] if isinstance(bundle_data['pcb'], dict) else json.loads(bundle_data['pcb'])
+                    pcb = PayloadConfidentialityBlock(
+                        security_target=pcb_data.get('security_target', 'payload'),
+                        security_source=pcb_data.get('security_source', ''),
+                        encryption_method=pcb_data.get('encryption_method', 'AES-256-CBC'),
+                        key_id=pcb_data.get('key_id', ''),
+                        iv=pcb_data.get('iv', '')
+                    )
+                
+                if bundle_data.get('pib'):
+                    pib_data = bundle_data['pib'] if isinstance(bundle_data['pib'], dict) else json.loads(bundle_data['pib'])
+                    pib = PayloadIntegrityBlock(
+                        security_target=pib_data.get('security_target', 'payload'),
+                        security_source=pib_data.get('security_source', ''),
+                        signature=pib_data.get('signature', ''),
+                        signer=pib_data.get('signer', '')
+                    )
+                
+                if bundle_data.get('bab'):
+                    bab_data = bundle_data['bab'] if isinstance(bundle_data['bab'], dict) else json.loads(bundle_data['bab'])
+                    bab = BundleAuthenticationBlock(
+                        security_target=bab_data.get('security_target', ''),
+                        security_source=bab_data.get('security_source', ''),
+                        mac=bab_data.get('mac', ''),
+                        key_id=bab_data.get('key_id', '')
+                    )
+                
                 bundle = DTNBundle(
                     bundle_id=bundle_data['bundle_id'],
                     source_station=bundle_data['source_station'],
                     destination_station=bundle_data['destination_station'],
-                    payload=bundle_data['payload'],
+                    encrypted_payload=encrypted_payload,
+                    payload_hash=payload_hash or self.bsp_security.get_payload_hash(encrypted_payload) if encrypted_payload else "",
                     priority=priority_enum,
                     created_at=created_at,
                     ttl_hours=bundle_data['ttl_hours'],
@@ -201,7 +289,13 @@ class DTNBundleManager:
                     hops=bundle_data.get('hops', []),
                     route=bundle_data.get('route', []),
                     size_bytes=bundle_data.get('size_bytes', 0),
-                    checksum=bundle_data.get('checksum', 0)
+                    checksum=bundle_data.get('checksum', 0),
+                    pcb=pcb,
+                    pib=pib,
+                    bab=bab,
+                    is_fragmented=bundle_data.get('is_fragmented', False),
+                    fragment_count=bundle_data.get('fragment_count', 1),
+                    fragment_number=bundle_data.get('fragment_number', 0)
                 )
                 
                 self.bundles[bundle.bundle_id] = bundle
@@ -334,7 +428,10 @@ class DTNBundleManager:
     
     def create_bundle(self, source_station: str, destination: str, 
                      payload: str, priority: str = "NORMAL", ttl_hours: int = 24) -> DTNBundle:
-        """Create a new DTN bundle"""
+        """
+        Create a new DTN bundle with encryption and optional fragmentation
+        Payload is encrypted and stored securely
+        """
         bundle_id = str(uuid.uuid4())
         
         priority_enum = BundlePriority.NORMAL
@@ -343,30 +440,71 @@ class DTNBundleManager:
         elif priority.upper() == "BULK":
             priority_enum = BundlePriority.BULK
         
-        bundle = DTNBundle(
-            bundle_id=bundle_id,
-            source_station=source_station,
-            destination_station=destination,
-            payload=payload,
-            priority=priority_enum,
-            created_at=datetime.now(timezone.utc),
-            ttl_hours=ttl_hours,
-            current_custodian=source_station,
-            hops=[source_station]
-        )
-        
-        self.bundles[bundle_id] = bundle
-        self.station_queues[source_station].append(bundle_id)
-        
-        self._sort_station_queue(source_station)
-        
-        # Save to DB
-        self.db_manager.save_bundle(bundle.to_dict())
-        
-        # Log checksum calculation
-        print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}... (size: {bundle.size_bytes} bytes, priority: {priority_enum.value})")
-        print(f"   Checksum calculated: 0x{bundle.checksum:08x} (CRC32)")
-        return bundle
+        try:
+            # Step 1: Encrypt payload
+            encrypted_payload, pcb = self.bsp_security.encrypt_payload(payload, source_station)
+            payload_hash = self.bsp_security.get_payload_hash(encrypted_payload)
+            payload_hash_short = self.bsp_security.get_payload_hash_short(encrypted_payload, 16)
+            
+            # Step 2: Create Payload Integrity Block (PIB)
+            pib = self.bsp_security.create_pib(payload_hash, source_station)
+            
+            # Step 3: Check if fragmentation is needed
+            payload_size = len(encrypted_payload.encode('utf-8'))
+            is_fragmented = self.fragmentation_manager.should_fragment(payload_size)
+            fragment_count = 1
+            
+            if is_fragmented:
+                # Fragment the encrypted payload
+                fragments = self.fragmentation_manager.fragment_bundle(
+                    bundle_id, encrypted_payload, source_station
+                )
+                fragment_count = len(fragments)
+                print(f"   📦 Bundle fragmented into {fragment_count} fragments")
+            
+            # Step 4: Create bundle (for first fragment or non-fragmented bundle)
+            bundle = DTNBundle(
+                bundle_id=bundle_id,
+                source_station=source_station,
+                destination_station=destination,
+                encrypted_payload=encrypted_payload,
+                payload_hash=payload_hash,
+                priority=priority_enum,
+                created_at=datetime.now(timezone.utc),
+                ttl_hours=ttl_hours,
+                current_custodian=source_station,
+                hops=[source_station],
+                pcb=pcb,
+                pib=pib,
+                is_fragmented=is_fragmented,
+                fragment_count=fragment_count,
+                fragment_number=0
+            )
+            
+            self.bundles[bundle_id] = bundle
+            self.station_queues[source_station].append(bundle_id)
+            
+            self._sort_station_queue(source_station)
+            
+            # Save to DB (encrypted payload stored)
+            bundle_dict = bundle.to_dict()
+            bundle_dict["encrypted_payload"] = encrypted_payload  # Store encrypted in DB
+            self.db_manager.save_bundle(bundle_dict)
+            
+            # Log bundle creation with security info
+            print(f"📦 Created bundle {bundle_id[:8]} at {source_station}")
+            print(f"   Payload hash: {payload_hash_short}... (encrypted)")
+            print(f"   Size: {bundle.size_bytes} bytes, Priority: {priority_enum.value}")
+            print(f"   🔐 Security: PCB={pcb.encryption_method}, PIB=HMAC-SHA256")
+            print(f"   Checksum: 0x{bundle.checksum:08x} (CRC32)")
+            
+            return bundle
+            
+        except Exception as e:
+            print(f"❌ Error creating bundle: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     def _sort_station_queue(self, station_id: str):
         """
@@ -399,6 +537,7 @@ class DTNBundleManager:
                       retransmission_count: Optional[int] = None) -> Optional[BundleTransmission]:
         """
         Start transmitting a bundle
+        Creates BAB for authentication between SA nodes
         Returns transmission object if started, None if can't start
         """
         if bundle_id not in self.bundles:
@@ -422,6 +561,14 @@ class DTNBundleManager:
             self.bundle_retry_counts[bundle_id] = retransmission_count
         
         bundle.forwarded_to = to_station
+        
+        # Create Bundle Authentication Block (BAB) for this hop
+        # BAB must be the last header applied to a bundle
+        if not bundle.bab or bundle.bab.security_source != from_station:
+            bundle_dict = bundle.to_dict()
+            bundle_dict["payload_hash"] = bundle.payload_hash
+            bundle.bab = self.bsp_security.create_bab(bundle_dict, from_station, to_station)
+            print(f"   🔐 BAB created for {from_station} → {to_station}")
         
         # Calculate transmission time
         transmission_time_sec = bundle.size_bytes / (data_rate_bps / 8)
@@ -447,11 +594,9 @@ class DTNBundleManager:
         self.active_transmissions[bundle_id] = transmission
         
         # Update DB
-        self.db_manager.update_bundle_status(
-            bundle_id=bundle_id,
-            status=BundleStatus.TRANSMITTING.value,
-            forwarded_to=to_station
-        )
+        bundle_dict = bundle.to_dict()
+        bundle_dict["encrypted_payload"] = bundle.encrypted_payload  # Store encrypted
+        self.db_manager.save_bundle(bundle_dict)
         
         # Clear retry count tracking (it's now in the transmission)
         if bundle_id in self.bundle_retry_counts:
@@ -460,10 +605,11 @@ class DTNBundleManager:
         retry_msg = f" (retry {retransmission_count + 1})" if retransmission_count > 0 else ""
         print(f"📡 Started transmitting bundle {bundle_id[:8]}{retry_msg}")
         print(f"   Route: {from_station} → {to_station}")
+        print(f"   Payload hash: {bundle.payload_hash[:16]}... (encrypted)")
         print(f"   Size: {bundle.size_bytes} bytes ({bundle.size_bytes/1024:.2f} KB)")
         print(f"   Data Rate: {data_rate_bps/1000:.1f} kbps")
         print(f"   Estimated Duration: {transmission_time_sec:.1f}s")
-        print(f"   Checksum being sent: 0x{bundle.checksum:08x} (CRC32)")
+        print(f"   Checksum: 0x{bundle.checksum:08x} (CRC32)")
         
         return transmission
     
@@ -531,7 +677,7 @@ class DTNBundleManager:
     
     def complete_transmission(self, bundle_id: str, data_rate_bps: float) -> Optional[Dict]:
         """
-        Complete a bundle transmission - receiver verifies checksum and sends ACK/NAK
+        Complete a bundle transmission - receiver verifies security blocks and checksum
         Returns ACK or NAK message to send back to sender
         """
         if bundle_id not in self.bundles:
@@ -566,22 +712,58 @@ class DTNBundleManager:
                 # No active transmission and no forwarded_to - likely already completed
                 return None
         
-        # Receiver verifies checksum of received bundle
+        # Security verification at intermediate node (SA node)
+        print(f"🔍 Bundle {bundle_id[:8]} received at {to_station} - verifying security...")
+        
+        # Step 1: Verify Bundle Authentication Block (BAB) - required at all SA nodes
+        security_valid = True
+        security_failure_reason = None
+        
+        if bundle.bab:
+            bab_valid = self.bsp_security.verify_bab(
+                bundle.to_dict(), bundle.bab, from_station
+            )
+            if not bab_valid:
+                security_valid = False
+                security_failure_reason = "BAB verification failed"
+                print(f"   ❌ BAB verification FAILED - bundle may be tampered!")
+            else:
+                print(f"   ✅ BAB verified - authenticity confirmed")
+        else:
+            # BAB is required by default security policy
+            security_valid = False
+            security_failure_reason = "Missing BAB (required by security policy)"
+            print(f"   ❌ Missing BAB - security policy violation!")
+        
+        # Step 2: Verify Payload Integrity Block (PIB)
+        if security_valid and bundle.pib:
+            pib_valid = self.bsp_security.verify_pib(bundle.payload_hash, bundle.pib)
+            if not pib_valid:
+                security_valid = False
+                security_failure_reason = "PIB verification failed"
+                print(f"   ❌ PIB verification FAILED - payload integrity compromised!")
+            else:
+                print(f"   ✅ PIB verified - payload integrity confirmed")
+        
+        # Step 3: Verify checksum
         received_checksum = bundle.calculate_checksum()
         expected_checksum = bundle.checksum
-        
-        # Log checksum verification
-        print(f"🔍 Bundle {bundle_id[:8]} received at {to_station} - verifying checksum...")
-        print(f"   Expected checksum (from bundle): 0x{expected_checksum:08x}")
-        print(f"   Received checksum (calculated): 0x{received_checksum:08x}")
-        
-        # Verify checksums match
         checksum_valid = (received_checksum == expected_checksum)
         
-        if checksum_valid:
-            # send ACK
-            print(f"   ✅ Checksums MATCH - bundle integrity verified")
-            print(f"✅ Bundle {bundle_id[:8]} received at {to_station}, checksum valid - sending ACK")
+        print(f"   Checksum: Expected=0x{expected_checksum:08x}, Received=0x{received_checksum:08x}")
+        
+        # All verifications must pass
+        if security_valid and checksum_valid:
+            # Create new BAB for next hop (if forwarding)
+            if to_station != bundle.destination_station and to_station != "ISS":
+                # Create new BAB for forwarding to next station
+                bundle_dict = bundle.to_dict()
+                bundle_dict["payload_hash"] = bundle.payload_hash
+                new_bab = self.bsp_security.create_bab(bundle_dict, to_station, "")
+                bundle.bab = new_bab
+                print(f"   🔐 New BAB created for next hop")
+            
+            print(f"✅ Bundle {bundle_id[:8]} received at {to_station}, all security checks passed - sending ACK")
             
             ack = {
                 "type": "ack",
@@ -597,14 +779,12 @@ class DTNBundleManager:
             # Queue ACK to be sent back to sender
             self.queue_ack(ack)
             
-            # Note: Bundle status is not changed here - it remains with sender until ACK is processed            
             return ack
         else:
-            # Checksum mismatch - send NAK
-            print(f"   ❌ Checksums DO NOT MATCH - bundle may be corrupted!")
-            print(f"   Difference: 0x{abs(expected_checksum - received_checksum):08x}")
-            print(f"❌ Bundle {bundle_id[:8]} received at {to_station}, checksum INVALID!")
-            print(f"   Expected: 0x{expected_checksum:08x}, Received: 0x{received_checksum:08x}")
+            # Security or checksum failure - send NAK
+            failure_reason = security_failure_reason or "checksum_mismatch"
+            print(f"❌ Bundle {bundle_id[:8]} received at {to_station}, verification FAILED!")
+            print(f"   Reason: {failure_reason}")
             print(f"   Sending NAK to {from_station} - requesting retransmission")
             
             nak = {
@@ -614,7 +794,7 @@ class DTNBundleManager:
                 "from_station": to_station,
                 "to_station": from_station,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "reason": "checksum_mismatch",
+                "reason": failure_reason,
                 "expected_checksum": expected_checksum,
                 "received_checksum": received_checksum
             }
