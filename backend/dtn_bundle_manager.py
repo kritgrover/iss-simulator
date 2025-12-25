@@ -461,42 +461,88 @@ class DTNBundleManager:
                 )
                 fragment_count = len(fragments)
                 print(f"   📦 Bundle fragmented into {fragment_count} fragments")
-            
-            # Step 4: Create bundle (for first fragment or non-fragmented bundle)
-            bundle = DTNBundle(
-                bundle_id=bundle_id,
-                source_station=source_station,
-                destination_station=destination,
-                encrypted_payload=encrypted_payload,
-                payload_hash=payload_hash,
-                priority=priority_enum,
-                created_at=datetime.now(timezone.utc),
-                ttl_hours=ttl_hours,
-                current_custodian=source_station,
-                hops=[source_station],
-                pcb=pcb,
-                pib=pib,
-                is_fragmented=is_fragmented,
-                fragment_count=fragment_count,
-                fragment_number=0
-            )
-            
-            self.bundles[bundle_id] = bundle
-            self.station_queues[source_station].append(bundle_id)
+                print(f"   Original size: {payload_size} bytes, Fragment size limit: {self.fragmentation_manager.MAX_FRAGMENT_SIZE} bytes")
+                
+                # Create a bundle for each fragment
+                fragment_bundles = []
+                for i, fragment in enumerate(fragments):
+                    # Create bundle for this fragment
+                    fragment_bundle = DTNBundle(
+                        bundle_id=fragment.fragment_id,
+                        source_station=source_station,
+                        destination_station=destination,
+                        encrypted_payload=fragment.payload,  # Only this fragment's payload
+                        payload_hash=payload_hash,  # Same hash for all fragments (original payload)
+                        priority=priority_enum,
+                        created_at=datetime.now(timezone.utc),
+                        ttl_hours=ttl_hours,
+                        current_custodian=source_station,
+                        hops=[source_station],
+                        pcb=pcb,
+                        pib=pib,
+                        is_fragmented=True,
+                        fragment_count=fragment_count,
+                        fragment_number=fragment.fragment_number
+                    )
+                    
+                    # Store fragment bundle
+                    self.bundles[fragment.fragment_id] = fragment_bundle
+                    self.station_queues[source_station].append(fragment.fragment_id)
+                    fragment_bundles.append(fragment_bundle)
+                    
+                    # Save to DB
+                    fragment_dict = fragment_bundle.to_dict()
+                    fragment_dict["encrypted_payload"] = fragment.payload
+                    self.db_manager.save_bundle(fragment_dict)
+                
+                # Return the first fragment bundle (for API compatibility)
+                bundle = fragment_bundles[0]
+                print(f"   Created {fragment_count} fragment bundles (IDs: {', '.join([f[:8] for f in [fb.bundle_id for fb in fragment_bundles]])})")
+            else:
+                # Step 4: Create bundle (non-fragmented)
+                bundle = DTNBundle(
+                    bundle_id=bundle_id,
+                    source_station=source_station,
+                    destination_station=destination,
+                    encrypted_payload=encrypted_payload,
+                    payload_hash=payload_hash,
+                    priority=priority_enum,
+                    created_at=datetime.now(timezone.utc),
+                    ttl_hours=ttl_hours,
+                    current_custodian=source_station,
+                    hops=[source_station],
+                    pcb=pcb,
+                    pib=pib,
+                    is_fragmented=False,
+                    fragment_count=1,
+                    fragment_number=0
+                )
+                
+                self.bundles[bundle_id] = bundle
+                self.station_queues[source_station].append(bundle_id)
             
             self._sort_station_queue(source_station)
             
-            # Save to DB (encrypted payload stored)
-            bundle_dict = bundle.to_dict()
-            bundle_dict["encrypted_payload"] = encrypted_payload  # Store encrypted in DB
-            self.db_manager.save_bundle(bundle_dict)
+            # Save to DB (encrypted payload stored) - only for non-fragmented bundles
+            # Fragmented bundles are already saved above
+            if not is_fragmented:
+                bundle_dict = bundle.to_dict()
+                bundle_dict["encrypted_payload"] = encrypted_payload  # Store encrypted in DB
+                self.db_manager.save_bundle(bundle_dict)
             
             # Log bundle creation with security info
-            print(f"📦 Created bundle {bundle_id[:8]} at {source_station}")
-            print(f"   Payload hash: {payload_hash_short}... (encrypted)")
-            print(f"   Size: {bundle.size_bytes} bytes, Priority: {priority_enum.value}")
-            print(f"   🔐 Security: PCB={pcb.encryption_method}, PIB=HMAC-SHA256")
-            print(f"   Checksum: 0x{bundle.checksum:08x} (CRC32)")
+            if is_fragmented:
+                print(f"📦 Created fragmented bundle {bundle_id[:8]} at {source_station}")
+                print(f"   Payload hash: {payload_hash_short}... (encrypted)")
+                print(f"   Total fragments: {fragment_count}, Fragment size: ~{bundle.size_bytes} bytes each")
+                print(f"   Priority: {priority_enum.value}")
+                print(f"   🔐 Security: PCB={pcb.encryption_method}, PIB=HMAC-SHA256")
+            else:
+                print(f"📦 Created bundle {bundle_id[:8]} at {source_station}")
+                print(f"   Payload hash: {payload_hash_short}... (encrypted)")
+                print(f"   Size: {bundle.size_bytes} bytes, Priority: {priority_enum.value}")
+                print(f"   🔐 Security: PCB={pcb.encryption_method}, PIB=HMAC-SHA256")
+                print(f"   Checksum: 0x{bundle.checksum:08x} (CRC32)")
             
             return bundle
             

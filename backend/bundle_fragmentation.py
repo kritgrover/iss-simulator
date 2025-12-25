@@ -52,7 +52,7 @@ class BundleFragmentationManager:
     """
     
     # Maximum fragment size (including headers)
-    MAX_FRAGMENT_SIZE = 8192 * 8  # 64KB per fragment (including headers)
+    MAX_FRAGMENT_SIZE = 4096  # 4KB per fragment (including headers) - adjust for testing
     FRAGMENT_HEADER_SIZE = 256  # Estimated header overhead per fragment
     
     def __init__(self):
