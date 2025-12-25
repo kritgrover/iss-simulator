@@ -13,6 +13,32 @@ class DatabaseManager:
         self.db_path = db_path
         self.init_db()
         
+    def _migrate_database(self, cursor):
+        """Migrate database schema to add new columns if they don't exist."""
+        try:
+            # Get existing columns
+            cursor.execute("PRAGMA table_info(bundles)")
+            existing_columns = [row[1] for row in cursor.fetchall()]
+            
+            # Columns to add if missing
+            new_columns = {
+                'encrypted_payload': 'TEXT',
+                'payload_hash': 'TEXT',
+                'pcb': 'TEXT',
+                'pib': 'TEXT',
+                'bab': 'TEXT',
+                'is_fragmented': 'INTEGER',
+                'fragment_count': 'INTEGER',
+                'fragment_number': 'INTEGER'
+            }
+            
+            for column_name, column_type in new_columns.items():
+                if column_name not in existing_columns:
+                    cursor.execute(f'ALTER TABLE bundles ADD COLUMN {column_name} {column_type}')
+                    print(f"   ➕ Added column: {column_name}")
+        except Exception as e:
+            print(f"⚠️  Migration warning: {e}")
+    
     def _recreate_database(self):
         """Delete corrupted database file and recreate it."""
         if os.path.exists(self.db_path):
@@ -83,6 +109,9 @@ class DatabaseManager:
             )
             ''')
             
+            # Migrate existing database: add new columns if they don't exist
+            self._migrate_database(cursor)
+            
             conn.commit()
             conn.close()
             print(f"💾 Database initialized at {self.db_path}")
@@ -122,6 +151,8 @@ class DatabaseManager:
                 updated_at TEXT
             )
             ''')
+            # Migrate if needed
+            self._migrate_database(cursor)
             conn.commit()
             conn.close()
             print(f"💾 Database recreated and initialized at {self.db_path}")

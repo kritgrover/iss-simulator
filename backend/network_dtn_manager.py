@@ -396,7 +396,8 @@ class NetworkDTNManager(DTNBundleManager):
         client_script = os.path.join(script_dir, 'mininet_nodes', 'dtn_client.py')
         
         import shlex
-        payload_escaped = shlex.quote(bundle.payload)
+        # Use encrypted_payload (bundles are now always encrypted)
+        payload_escaped = shlex.quote(bundle.encrypted_payload)
         
         # Build command to run client script within source node's namespace
         cmd = 'python3 {} {} {} {} {} {} {}'.format(
