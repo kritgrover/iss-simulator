@@ -20,7 +20,6 @@ import { DTNBundle } from '@/types/dtnBundle';
 const Index = () => {
   const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
   const [viewMode, setViewMode] = useState<"ground" | "iss">("ground");
-  const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
 
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
   const [activeStationId, setActiveStationId] = useState('toronto');
