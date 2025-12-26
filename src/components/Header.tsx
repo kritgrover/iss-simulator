@@ -1,12 +1,15 @@
-import { Circle } from "lucide-react";
+import { Circle, Satellite, Radio } from "lucide-react";
 import { useMET } from "@/hooks/useMET";
+import { Button } from "@/components/ui/button";
 
 interface HeaderProps {
   isConnected: boolean;
   connectionError?: string | null;
+  viewMode?: "ground" | "iss";
+  onViewModeChange?: (mode: "ground" | "iss") => void;
 }
 
-const Header = ({ isConnected, connectionError }: HeaderProps) => {
+const Header = ({ isConnected, connectionError, viewMode = "ground", onViewModeChange }: HeaderProps) => {
   const met = useMET();
 
   return (
@@ -21,6 +24,28 @@ const Header = ({ isConnected, connectionError }: HeaderProps) => {
       </div>
       
       <div className="flex items-center gap-4">
+        {onViewModeChange && (
+          <div className="flex items-center gap-2 border-r border-border pr-4">
+            <Button
+              variant={viewMode === "ground" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onViewModeChange("ground")}
+              className="h-8"
+            >
+              <Radio className="w-3 h-3 mr-2" />
+              Ground View
+            </Button>
+            <Button
+              variant={viewMode === "iss" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onViewModeChange("iss")}
+              className="h-8"
+            >
+              <Satellite className="w-3 h-3 mr-2" />
+              ISS View
+            </Button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           {isConnected ? (
             <>

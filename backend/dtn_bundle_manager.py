@@ -169,6 +169,7 @@ class DTNBundleManager:
         self.stations = {s["id"]: s["name"] for s in stations}
         self.bundles: Dict[str, DTNBundle] = {}
         self.station_queues: Dict[str, List[str]] = {sid: [] for sid in self.stations.keys()}
+        self.iss_queue: List[str] = []  # Special queue for bundles from ISS
         self.pending_acks: List[Dict] = []
         self.active_transmissions: Dict[str, BundleTransmission] = {}
         self.pending_acknowledgments: Dict[str, PendingAcknowledgment] = {}  # Bundles waiting for ACK/NAK
@@ -310,7 +311,11 @@ class DTNBundleManager:
                 elif bundle.status in [BundleStatus.QUEUED, BundleStatus.WAITING_ACK]:
                     # Add to custodian's queue
                     custodian = bundle.current_custodian
-                    if custodian and custodian in self.station_queues:
+                    if custodian and custodian.upper() == "ISS":
+                        # Add to ISS queue
+                        if bundle.bundle_id not in self.iss_queue:
+                            self.iss_queue.append(bundle.bundle_id)
+                    elif custodian and custodian in self.station_queues:
                         self.station_queues[custodian].append(bundle.bundle_id)
                 
                 loaded_count += 1
@@ -320,6 +325,9 @@ class DTNBundleManager:
         # Sort queues
         for station_id in self.station_queues:
             self._sort_station_queue(station_id)
+        
+        # Sort ISS queue
+        self._sort_iss_queue()
             
         if loaded_count > 0:
             print(f"📦 Restored {loaded_count} bundles from persistent storage")
@@ -329,19 +337,67 @@ class DTNBundleManager:
         """
         Find a route from source to destination using mesh connections and next pass times.
         Uses BFS with preference for stations with sooner next passes.
+        Supports ISS as source (reverse routing).
         
         Args:
-            from_station: Source station ID
+            from_station: Source station ID (can be "ISS")
             to_station: Destination station ID (can be "ISS" for final destination)
             stations_data: List of station data dicts with next_pass_minutes
             visited: Already visited stations (for loop prevention)
             
         Returns:
             List of station IDs from source to destination station (or station that can reach ISS).
-            Route does NOT include "ISS" - ISS forwarding is handled separately.
+            Route does NOT include "ISS" when destination is ISS - ISS forwarding is handled separately.
+            Route DOES include "ISS" when source is ISS (reverse routing).
         """
         if visited is None:
             visited = []
+        
+        # Handle ISS as source (reverse routing)
+        if from_station.upper() == "ISS":
+            station_lookup = {s["id"]: s for s in stations_data}
+            
+            # Find currently visible station from ISS
+            currently_visible = [
+                sid for sid in self.stations.keys() 
+                if sid not in visited and
+                station_lookup.get(sid, {}).get("is_visible", False)
+            ]
+            
+            if currently_visible:
+                # If destination is visible, route: ISS → destination
+                if to_station in currently_visible:
+                    return ["ISS", to_station]
+                
+                # Prefer station with highest elevation
+                currently_visible.sort(
+                    key=lambda sid: station_lookup.get(sid, {}).get("look_angles", {}).get("elevation", -999),
+                    reverse=True
+                )
+                first_hop = currently_visible[0]
+            else:
+                # Find station with soonest pass
+                upcoming_pass_stations = [
+                    sid for sid in self.stations.keys() 
+                    if sid not in visited and
+                    station_lookup.get(sid, {}).get("next_pass_minutes", 999999) > 0
+                ]
+                if not upcoming_pass_stations:
+                    return None  # No station can see ISS
+                upcoming_pass_stations.sort(key=lambda sid: station_lookup.get(sid, {}).get("next_pass_minutes", 999999))
+                first_hop = upcoming_pass_stations[0]
+            
+            # If destination is first hop, done
+            if first_hop == to_station:
+                return ["ISS", to_station]
+            
+            # Find route from first hop to destination (recursive, but avoid ISS in visited)
+            route_from_first = self.find_route(first_hop, to_station, stations_data, visited=["ISS"])
+            if route_from_first:
+                return ["ISS"] + route_from_first
+            else:
+                # Direct route if no mesh route found
+                return ["ISS", first_hop, to_station] if first_hop != to_station else ["ISS", to_station]
         
         # Build adjacency list from mesh connections
         adjacency = {}
@@ -902,8 +958,11 @@ class DTNBundleManager:
             # Calculate total delivery time
             total_time = (bundle.delivered_at - bundle.created_at).total_seconds()
             
-            # Remove from sender's queue
-            if bundle_id in self.station_queues[to_station]:
+            # Remove from sender's queue (handle ISS queue)
+            if to_station.upper() == "ISS":
+                if bundle_id in self.iss_queue:
+                    self.iss_queue.remove(bundle_id)
+            elif bundle_id in self.station_queues.get(to_station, []):
                 self.station_queues[to_station].remove(bundle_id)
             
             self.delivered_bundles.append(bundle_id)
@@ -931,13 +990,19 @@ class DTNBundleManager:
             )
             self.db_manager.update_bundle_hops(bundle_id, bundle.hops)
             
-            # Move from sender's queue to receiver's queue
-            if bundle_id in self.station_queues[to_station]:
-                self.station_queues[to_station].remove(bundle_id)
-            self.station_queues[from_station].append(bundle_id)
+            # Handle ISS queue (if bundle was from ISS)
+            if to_station.upper() == "ISS":
+                if bundle_id in self.iss_queue:
+                    self.iss_queue.remove(bundle_id)
             
-            # Sort the destination queue after adding bundle
-            self._sort_station_queue(from_station)
+            # Move from sender's queue to receiver's queue (if not ISS)
+            if to_station.upper() != "ISS":
+                if bundle_id in self.station_queues.get(to_station, []):
+                    self.station_queues[to_station].remove(bundle_id)
+            if from_station.upper() != "ISS" and from_station in self.station_queues:
+                self.station_queues[from_station].append(bundle_id)
+                # Sort the destination queue after adding bundle
+                self._sort_station_queue(from_station)
             
             print(f"📨 Bundle {bundle_id[:8]} ACK received - custody transferred to {from_station.upper()}")
             print(f"   Path so far: {' → '.join(bundle.hops)}")
@@ -1242,3 +1307,225 @@ class DTNBundleManager:
                 if bundle_id not in self.failed_bundles:
                     self._mark_bundle_failed(bundle_id, "ttl_exceeded")
                 print(f"❌ Bundle {bundle_id[:8]} FAILED - expired (TTL exceeded)")
+    
+    def get_iss_delivered_bundles(self) -> List[Dict]:
+        """Get all bundles delivered to ISS with fragment status"""
+        iss_bundles = []
+        
+        # Get all delivered bundles
+        for bundle_id in self.delivered_bundles:
+            if bundle_id in self.bundles:
+                bundle = self.bundles[bundle_id]
+                # Only include bundles delivered to ISS
+                if bundle.destination_station.upper() == "ISS" and bundle.status == BundleStatus.DELIVERED:
+                    bundle_dict = bundle.to_dict()
+                    
+                    # Check if this is a fragment
+                    if bundle.is_fragmented:
+                        # Get parent bundle ID (first part of fragment_id before "-frag-")
+                        parent_id = bundle_id.split("-frag-")[0] if "-frag-" in bundle_id else bundle_id
+                        
+                        # Count fragments for this parent
+                        fragment_count = 0
+                        fragments_received = 0
+                        for bid, b in self.bundles.items():
+                            if b.destination_station.upper() == "ISS" and b.status == BundleStatus.DELIVERED:
+                                if b.is_fragmented:
+                                    frag_parent = bid.split("-frag-")[0] if "-frag-" in bid else bid
+                                    if frag_parent == parent_id:
+                                        fragment_count = max(fragment_count, b.fragment_count)
+                                        fragments_received += 1
+                        
+                        bundle_dict["parent_bundle_id"] = parent_id
+                        bundle_dict["fragments_received"] = fragments_received
+                        bundle_dict["fragments_total"] = fragment_count
+                        bundle_dict["is_complete"] = fragments_received == fragment_count
+                    else:
+                        bundle_dict["parent_bundle_id"] = bundle_id
+                        bundle_dict["fragments_received"] = 1
+                        bundle_dict["fragments_total"] = 1
+                        bundle_dict["is_complete"] = True
+                    
+                    iss_bundles.append(bundle_dict)
+        
+        # Sort by delivered_at (most recent first)
+        iss_bundles.sort(key=lambda b: b.get("delivered_at", ""), reverse=True)
+        return iss_bundles
+    
+    def get_fragment_status(self, bundle_id: str) -> Optional[Dict]:
+        """Get fragment status for a bundle (works with parent_bundle_id for fragmented bundles)"""
+        # Check if this is a fragment ID or parent ID
+        if "-frag-" in bundle_id:
+            parent_id = bundle_id.split("-frag-")[0]
+        else:
+            parent_id = bundle_id
+        
+        # Find all fragments for this parent
+        fragments = []
+        fragment_count = 0
+        
+        for bid, bundle in self.bundles.items():
+            if bundle.destination_station.upper() == "ISS":
+                if bundle.is_fragmented:
+                    frag_parent = bid.split("-frag-")[0] if "-frag-" in bid else bid
+                    if frag_parent == parent_id:
+                        fragment_count = max(fragment_count, bundle.fragment_count)
+                        fragments.append({
+                            "fragment_number": bundle.fragment_number,
+                            "fragment_id": bid,
+                            "status": "DELIVERED" if bundle.status == BundleStatus.DELIVERED else "PENDING",
+                            "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None
+                        })
+                elif not bundle.is_fragmented and bid == parent_id:
+                    # Non-fragmented bundle
+                    fragments.append({
+                        "fragment_number": 0,
+                        "fragment_id": bid,
+                        "status": "DELIVERED" if bundle.status == BundleStatus.DELIVERED else "PENDING",
+                        "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None
+                    })
+                    fragment_count = 1
+        
+        if not fragments:
+            return None
+        
+        fragments.sort(key=lambda f: f["fragment_number"])
+        is_complete = len([f for f in fragments if f["status"] == "DELIVERED"]) == fragment_count
+        
+        return {
+            "bundle_id": parent_id,
+            "fragments": fragments,
+            "fragments_received": len([f for f in fragments if f["status"] == "DELIVERED"]),
+            "fragments_total": fragment_count,
+            "is_complete": is_complete
+        }
+    
+    def reassemble_and_decrypt_bundle(self, bundle_id: str) -> Optional[Dict]:
+        """
+        Reassemble fragments and decrypt message for ISS
+        Returns dict with decrypted payload or None if incomplete
+        """
+        # Get parent bundle ID
+        if "-frag-" in bundle_id:
+            parent_id = bundle_id.split("-frag-")[0]
+        else:
+            parent_id = bundle_id
+        
+        # Check fragment status
+        fragment_status = self.get_fragment_status(parent_id)
+        if not fragment_status or not fragment_status["is_complete"]:
+            return None
+        
+        # Collect all fragment bundles
+        fragment_bundles = []
+        for bid, bundle in self.bundles.items():
+            if bundle.destination_station.upper() == "ISS" and bundle.status == BundleStatus.DELIVERED:
+                if bundle.is_fragmented:
+                    frag_parent = bid.split("-frag-")[0] if "-frag-" in bid else bid
+                    if frag_parent == parent_id:
+                        fragment_bundles.append((bundle.fragment_number, bundle))
+                elif not bundle.is_fragmented and bid == parent_id:
+                    fragment_bundles.append((0, bundle))
+        
+        if not fragment_bundles:
+            return None
+        
+        # Sort by fragment number
+        fragment_bundles.sort(key=lambda x: x[0])
+        
+        # Reassemble encrypted payload
+        encrypted_payload_parts = []
+        source_station = None
+        pcb = None
+        
+        for frag_num, bundle in fragment_bundles:
+            encrypted_payload_parts.append(bundle.encrypted_payload)
+            if source_station is None:
+                source_station = bundle.source_station
+                pcb = bundle.pcb
+        
+        reassembled_encrypted = ''.join(encrypted_payload_parts)
+        
+        # Decrypt
+        if not pcb or not source_station:
+            return None
+        
+        try:
+            decrypted_payload = self.bsp_security.decrypt_payload(reassembled_encrypted, pcb, source_station)
+            
+            return {
+                "bundle_id": parent_id,
+                "decrypted_payload": decrypted_payload,
+                "source_station": source_station,
+                "reassembled_at": datetime.now(timezone.utc).isoformat(),
+                "fragments_count": len(fragment_bundles)
+            }
+        except Exception as e:
+            print(f"❌ Error decrypting bundle {parent_id[:8]}: {e}")
+            return None
+    
+    def create_iss_reply_bundle(self, destination_station: str, payload: str, 
+                               priority: str = "NORMAL", ttl_hours: int = 24) -> DTNBundle:
+        """
+        Create a bundle from ISS to a ground station
+        Uses reverse routing: ISS → visible station → ... → destination
+        """
+        # Create bundle with source = "ISS"
+        bundle = self.create_bundle(
+            source_station="ISS",
+            destination=destination_station,
+            payload=payload,
+            priority=priority,
+            ttl_hours=ttl_hours
+        )
+        
+        # Set current custodian to ISS (special handling)
+        bundle.current_custodian = "ISS"
+        bundle.hops = ["ISS"]
+        
+        # Add to ISS queue instead of station queue
+        self.iss_queue.append(bundle.bundle_id)
+        self._sort_iss_queue()
+        
+        # Save to DB
+        bundle_dict = bundle.to_dict()
+        bundle_dict["encrypted_payload"] = bundle.encrypted_payload
+        self.db_manager.save_bundle(bundle_dict)
+        
+        print(f"📤 ISS created reply bundle {bundle.bundle_id[:8]} to {destination_station}")
+        
+        return bundle
+    
+    def _sort_iss_queue(self):
+        """Sort ISS queue by priority"""
+        if not self.iss_queue:
+            return
+        
+        bundles_with_ids = [
+            (bundle_id, self.bundles.get(bundle_id))
+            for bundle_id in self.iss_queue
+            if bundle_id in self.bundles
+        ]
+        
+        priority_order = {"EXPEDITED": 0, "NORMAL": 1, "BULK": 2}
+        bundles_with_ids.sort(
+            key=lambda x: priority_order.get(x[1].priority.value, 99) if x[1] else 99
+        )
+        
+        self.iss_queue = [bundle_id for bundle_id, _ in bundles_with_ids]
+    
+    def get_iss_queue(self) -> List[Dict]:
+        """Get all bundles in ISS queue"""
+        bundles = []
+        for bid in self.iss_queue:
+            if bid in self.bundles:
+                bundle = self.bundles[bid]
+                if not bundle.is_expired():
+                    bundles.append(bundle.to_dict())
+                else:
+                    bundle.status = BundleStatus.EXPIRED
+        
+        priority_order = {"EXPEDITED": 0, "NORMAL": 1, "BULK": 2}
+        bundles.sort(key=lambda b: priority_order.get(b["priority"], 99))
+        
+        return bundles
