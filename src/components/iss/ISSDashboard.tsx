@@ -34,30 +34,27 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
   const pendingMessages = messages.filter(m => !m.is_complete).length;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Activity className="w-4 h-4" />
-          ISS Dashboard
-        </CardTitle>
-        <CardDescription>
-          Operational status and metrics
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Card className="p-4">
+      <div className="mb-3">
+        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
+          <Activity className="w-3 h-3" />
+          ISS DASHBOARD
+        </h3>
+      </div>
+      <div className="space-y-4">
         {/* Orbital Parameters */}
         <div className="space-y-2">
-          <div className="text-sm font-semibold">Orbital Parameters</div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary">Orbital Parameters</div>
+          <div className="grid grid-cols-2 gap-2">
             <div className="p-2 bg-background/50 rounded border border-border">
-              <div className="text-secondary">Altitude</div>
-              <div className="font-mono text-primary">
+              <div className="text-[10px] text-secondary mb-1">Altitude</div>
+              <div className="text-[13px] font-mono text-primary">
                 {orbitalData?.iss_position?.altitude_km.toFixed(1) || "N/A"} km
               </div>
             </div>
             <div className="p-2 bg-background/50 rounded border border-border">
-              <div className="text-secondary">Velocity</div>
-              <div className="font-mono text-primary">
+              <div className="text-[10px] text-secondary mb-1">Velocity</div>
+              <div className="text-[13px] font-mono text-primary">
                 {orbitalData?.iss_position?.velocity_kmps.toFixed(3) || "N/A"} km/s
               </div>
             </div>
@@ -67,9 +64,9 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
         {/* Link Status */}
         {orbitalData?.link_status && (
           <div className="space-y-2">
-            <div className="text-sm font-semibold">Link Status</div>
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between">
+            <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary">Link Status</div>
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px]">
                 <span className="text-secondary">State:</span>
                 <span className={`font-mono ${
                   orbitalData.link_status.connection_state === "ACQUIRED" ? "text-success" :
@@ -80,14 +77,14 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
                 </span>
               </div>
               {orbitalData.link_status.data_rate_kbps !== undefined && (
-                <div className="flex justify-between">
+                <div className="flex justify-between text-[11px]">
                   <span className="text-secondary">Data Rate:</span>
                   <span className="font-mono text-primary">
                     {orbitalData.link_status.data_rate_kbps.toFixed(1)} kbps
                   </span>
                 </div>
               )}
-              <div className="flex justify-between">
+              <div className="flex justify-between text-[11px]">
                 <span className="text-secondary">SNR:</span>
                 <span className="font-mono text-primary">
                   {orbitalData.link_status.snr_db.toFixed(1)} dB
@@ -99,21 +96,21 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
 
         {/* Visible Stations */}
         <div className="space-y-2">
-          <div className="text-sm font-semibold flex items-center gap-2">
+          <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
             <Radio className="w-3 h-3" />
             Visible Stations
           </div>
           {visibleStations.length > 0 ? (
             <div className="space-y-1">
               {visibleStations.map(station => (
-                <div key={station.id} className="text-xs p-2 bg-success/10 rounded border border-success/50">
-                  <div className="font-semibold text-success">{station.name}</div>
-                  <div className="text-secondary">In contact</div>
+                <div key={station.id} className="text-[11px] p-2 bg-success/10 rounded border border-success/50">
+                  <div className="font-mono font-semibold text-success">{station.name.toUpperCase()}</div>
+                  <div className="text-[10px] text-secondary">In contact</div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-xs text-secondary p-2 bg-background/50 rounded border border-border">
+            <div className="text-[11px] text-secondary p-2 bg-background/50 rounded border border-border">
               No stations currently visible
             </div>
           )}
@@ -122,10 +119,10 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
         {/* Next Contact */}
         {nextStation && (
           <div className="space-y-2">
-            <div className="text-sm font-semibold">Next Contact</div>
-            <div className="text-xs p-2 bg-background/50 rounded border border-border">
-              <div className="font-semibold">{nextStation.name}</div>
-              <div className="text-secondary">
+            <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary">Next Contact</div>
+            <div className="text-[11px] p-2 bg-background/50 rounded border border-border">
+              <div className="font-mono font-semibold">{nextStation.name.toUpperCase()}</div>
+              <div className="text-[10px] text-secondary">
                 In {nextStation.next_pass_minutes.toFixed(0)} minutes
               </div>
             </div>
@@ -134,31 +131,31 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
 
         {/* Message Statistics */}
         <div className="space-y-2">
-          <div className="text-sm font-semibold flex items-center gap-2">
+          <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
             <MessageSquare className="w-3 h-3" />
             Messages
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="grid grid-cols-2 gap-2">
             <div className="p-2 bg-background/50 rounded border border-border">
-              <div className="text-secondary">Received</div>
-              <div className="font-mono text-primary text-lg">
+              <div className="text-[10px] text-secondary mb-1">Received</div>
+              <div className="text-[13px] font-mono text-primary">
                 {messages.length}
               </div>
             </div>
             <div className="p-2 bg-background/50 rounded border border-border">
-              <div className="text-secondary">Complete</div>
-              <div className="font-mono text-success text-lg">
+              <div className="text-[10px] text-secondary mb-1">Complete</div>
+              <div className="text-[13px] font-mono text-success">
                 {completedMessages}
               </div>
             </div>
           </div>
           {pendingMessages > 0 && (
-            <div className="text-xs text-amber-500 p-2 bg-amber-500/10 rounded border border-amber-500/50">
+            <div className="text-[11px] text-amber-500 p-2 bg-amber-500/10 rounded border border-amber-500/50">
               {pendingMessages} message{pendingMessages !== 1 ? 's' : ''} pending reassembly
             </div>
           )}
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 };

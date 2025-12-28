@@ -51,18 +51,16 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
 
   if (!selectedMessage) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="w-4 h-4" />
-            Message Reassembly
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-sm text-secondary text-center py-8">
-            Select a message to view fragment status
-          </div>
-        </CardContent>
+      <Card className="p-4">
+        <div className="mb-3">
+          <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
+            <Package className="w-3 h-3" />
+            MESSAGE REASSEMBLY
+          </h3>
+        </div>
+        <div className="text-[11px] text-secondary text-center py-8">
+          Select a message to view fragment status
+        </div>
       </Card>
     );
   }
@@ -86,24 +84,24 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Package className="w-4 h-4" />
-          Message Reassembly
-        </CardTitle>
-        <CardDescription>
+    <Card className="p-4">
+      <div className="mb-3">
+        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
+          <Package className="w-3 h-3" />
+          MESSAGE REASSEMBLY
+        </h3>
+        <div className="text-[11px] font-mono text-secondary mt-1">
           Bundle: {selectedMessage.bundle_id_short} from {selectedMessage.source_station.toUpperCase()}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </div>
+      </div>
+      <div className="space-y-4">
         {/* Message Info */}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <Badge className={getPriorityColor(selectedMessage.priority)}>
+            <Badge className={`${getPriorityColor(selectedMessage.priority)} text-[10px] px-1.5 py-0`}>
               {selectedMessage.priority}
             </Badge>
-            <span className="text-xs text-secondary">
+            <span className="text-[11px] font-mono text-secondary">
               Source: {selectedMessage.source_station.toUpperCase()}
             </span>
           </div>
@@ -112,7 +110,7 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
         {/* Fragment Progress */}
         {selectedMessage.fragments_total > 1 ? (
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-[11px]">
               <span className="text-secondary">Fragment Progress</span>
               <span className="font-mono">
                 {selectedMessage.fragments_received} / {selectedMessage.fragments_total}
@@ -120,14 +118,14 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
             </div>
             <Progress value={progress} className="h-2" />
             {!selectedMessage.is_complete && (
-              <div className="text-xs text-amber-500 flex items-center gap-1">
+              <div className="text-[10px] text-amber-500 flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 Waiting for remaining fragments...
               </div>
             )}
           </div>
         ) : (
-          <div className="text-sm text-secondary">
+          <div className="text-[11px] text-secondary">
             Single bundle (no fragmentation)
           </div>
         )}
@@ -135,12 +133,12 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
         {/* Fragment List */}
         {fragmentStatus && fragmentStatus.fragments && (
           <div className="space-y-1">
-            <div className="text-sm font-semibold mb-2">Fragments:</div>
+            <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary mb-2">Fragments</div>
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
               {fragmentStatus.fragments.map((frag: any) => (
                 <div
                   key={frag.fragment_number}
-                  className={`flex items-center justify-between p-2 rounded border text-xs ${
+                  className={`flex items-center justify-between p-2 rounded border text-[11px] ${
                     frag.status === "DELIVERED"
                       ? "bg-success/10 border-success/50"
                       : "bg-background/30 border-border"
@@ -154,7 +152,7 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
                     )}
                     <span className="font-mono">Fragment {frag.fragment_number}</span>
                   </div>
-                  <span className="text-secondary">
+                  <span className="text-[10px] text-secondary">
                     {frag.status === "DELIVERED" ? "Received" : "Pending"}
                   </span>
                 </div>
@@ -168,17 +166,17 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
           <Button
             onClick={handleReassemble}
             disabled={reassembling}
-            className="w-full"
+            className="w-full h-8 text-[11px] font-mono"
             variant="outline"
           >
             {reassembling ? (
               <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
                 Reassembling...
               </>
             ) : (
               <>
-                <Package className="w-4 h-4 mr-2" />
+                <Package className="w-3 h-3 mr-2" />
                 Reassemble & Decrypt
               </>
             )}
@@ -188,15 +186,15 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
         {/* Decrypted Message */}
         {reassembledPayload && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Lock className="w-4 h-4 text-success" />
-              Decrypted Message:
+            <div className="flex items-center gap-2 text-[10px] font-semibold tracking-wider uppercase text-secondary">
+              <Lock className="w-3 h-3 text-success" />
+              Decrypted Message
             </div>
-            <div className="p-3 bg-background/50 rounded border border-border font-mono text-sm text-terminal-text whitespace-pre-wrap">
+            <div className="p-3 bg-background/50 rounded border border-border font-mono text-[11px] text-terminal-text whitespace-pre-wrap">
               {reassembledPayload}
             </div>
             {selectedMessage.reassembled_at && (
-              <div className="text-xs text-secondary">
+              <div className="text-[10px] text-secondary font-mono">
                 Reassembled at: {new Date(selectedMessage.reassembled_at).toLocaleString()}
               </div>
             )}
@@ -205,12 +203,12 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
 
         {/* Auto-reassemble indicator */}
         {selectedMessage.is_complete && reassembledPayload && (
-          <div className="text-xs text-success flex items-center gap-1">
+          <div className="text-[10px] text-success flex items-center gap-1">
             <CheckCircle className="w-3 h-3" />
             Message fully reassembled and decrypted
           </div>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 };

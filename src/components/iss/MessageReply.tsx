@@ -70,27 +70,29 @@ const MessageReply = () => {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Radio className="w-4 h-4" />
-          Send Reply
-        </CardTitle>
-        <CardDescription>
+    <Card className="p-4">
+      <div className="mb-3">
+        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
+          <Radio className="w-3 h-3" />
+          SEND REPLY
+        </h3>
+        <div className="text-[11px] font-mono text-secondary mt-1">
           Compose and send a message to a ground station
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </div>
+      </div>
+      <div className="space-y-4">
         {/* Destination Station Selector */}
         <div className="space-y-2">
-          <Label htmlFor="destination">Destination Station</Label>
+          <Label htmlFor="destination" className="text-[10px] font-semibold tracking-wider uppercase text-secondary">
+            Destination Station
+          </Label>
           <Select value={destinationStation} onValueChange={setDestinationStation}>
-            <SelectTrigger id="destination">
+            <SelectTrigger id="destination" className="h-8 text-[11px] font-mono">
               <SelectValue placeholder="Select a station" />
             </SelectTrigger>
             <SelectContent>
               {DEFAULT_STATIONS.map((station) => (
-                <SelectItem key={station.id} value={station.id}>
+                <SelectItem key={station.id} value={station.id} className="text-[11px] font-mono">
                   <div className="flex items-center gap-2">
                     <div
                       className="w-2 h-2 rounded-full"
@@ -106,19 +108,21 @@ const MessageReply = () => {
 
         {/* Priority Selector */}
         <div className="space-y-2">
-          <Label htmlFor="priority">Priority</Label>
+          <Label htmlFor="priority" className="text-[10px] font-semibold tracking-wider uppercase text-secondary">
+            Priority
+          </Label>
           <Select value={priority} onValueChange={(v) => setPriority(v as typeof priority)}>
-            <SelectTrigger id="priority">
+            <SelectTrigger id="priority" className="h-8 text-[11px] font-mono">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="EXPEDITED">
+              <SelectItem value="EXPEDITED" className="text-[11px] font-mono">
                 <span className={getPriorityColor("EXPEDITED")}>EXPEDITED</span>
               </SelectItem>
-              <SelectItem value="NORMAL">
+              <SelectItem value="NORMAL" className="text-[11px] font-mono">
                 <span className={getPriorityColor("NORMAL")}>NORMAL</span>
               </SelectItem>
-              <SelectItem value="BULK">
+              <SelectItem value="BULK" className="text-[11px] font-mono">
                 <span className={getPriorityColor("BULK")}>BULK</span>
               </SelectItem>
             </SelectContent>
@@ -127,16 +131,18 @@ const MessageReply = () => {
 
         {/* Message Composer */}
         <div className="space-y-2">
-          <Label htmlFor="message">Message</Label>
+          <Label htmlFor="message" className="text-[10px] font-semibold tracking-wider uppercase text-secondary">
+            Message
+          </Label>
           <Textarea
             id="message"
             placeholder="Type your message here..."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             rows={6}
-            className="font-mono text-sm"
+            className="font-mono text-[11px]"
           />
-          <div className="text-xs text-secondary">
+          <div className="text-[10px] text-secondary font-mono">
             {message.length} characters
           </div>
         </div>
@@ -145,16 +151,16 @@ const MessageReply = () => {
         <Button
           onClick={handleSend}
           disabled={sending || !destinationStation || !message.trim()}
-          className="w-full"
+          className="w-full h-8 text-[11px] font-mono"
         >
           {sending ? (
             <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-3 h-3 mr-2 animate-spin" />
               Sending...
             </>
           ) : (
             <>
-              <Send className="w-4 h-4 mr-2" />
+              <Send className="w-3 h-3 mr-2" />
               Send Reply
             </>
           )}
@@ -162,17 +168,17 @@ const MessageReply = () => {
 
         {/* Route Preview */}
         {destinationStation && (
-          <div className="text-xs text-secondary p-2 bg-background/50 rounded border border-border">
-            <div className="font-semibold mb-1">Route Preview:</div>
+          <div className="text-[11px] text-secondary p-2 bg-background/50 rounded border border-border">
+            <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary mb-1">Route Preview</div>
             <div className="font-mono">
               ISS → {DEFAULT_STATIONS.find(s => s.id === destinationStation)?.name || destinationStation}
             </div>
-            <div className="text-xs text-secondary mt-1">
+            <div className="text-[10px] text-secondary mt-1 font-mono">
               Routing will be calculated automatically based on visible stations
             </div>
           </div>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 };

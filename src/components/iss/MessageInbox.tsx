@@ -43,16 +43,14 @@ const MessageInbox = ({ onMessageSelect, selectedMessage: externalSelectedMessag
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mail className="w-4 h-4" />
-            Message Inbox
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-sm text-secondary">Loading messages...</div>
-        </CardContent>
+      <Card className="p-4">
+        <div className="mb-3">
+          <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
+            <Mail className="w-3 h-3" />
+            MESSAGE INBOX
+          </h3>
+        </div>
+        <div className="text-[11px] text-secondary">Loading messages...</div>
       </Card>
     );
   }
@@ -69,78 +67,76 @@ const MessageInbox = ({ onMessageSelect, selectedMessage: externalSelectedMessag
   const messageList = Array.from(uniqueMessages.values());
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Mail className="w-4 h-4" />
-          Message Inbox
-        </CardTitle>
-        <CardDescription>
-          {messageList.length} message{messageList.length !== 1 ? 's' : ''} received
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2 max-h-[400px] overflow-y-auto">
-          {messageList.length === 0 ? (
-            <div className="text-sm text-secondary text-center py-8">
-              No messages received yet
-            </div>
-          ) : (
-            messageList.map((message) => (
-              <div
-                key={message.bundle_id}
-                onClick={() => setSelectedMessage(message)}
-                className={`p-3 rounded-lg border cursor-pointer transition-all hover:bg-background/50 ${
-                  selectedMessage?.bundle_id === message.bundle_id
-                    ? "bg-primary/10 border-primary/50"
-                    : "bg-background/30 border-border"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-semibold">
-                        {message.source_station.toUpperCase()}
+    <Card className="p-4">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
+          <Mail className="w-3 h-3" />
+          MESSAGE INBOX
+        </h3>
+        <div className="text-[11px] font-mono text-secondary">
+          {messageList.length} message{messageList.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+      <div className="space-y-2 max-h-[400px] overflow-y-auto">
+        {messageList.length === 0 ? (
+          <div className="text-[11px] text-secondary text-center py-8">
+            No messages received yet
+          </div>
+        ) : (
+          messageList.map((message) => (
+            <div
+              key={message.bundle_id}
+              onClick={() => setSelectedMessage(message)}
+              className={`p-2 rounded border cursor-pointer transition-all hover:bg-background/50 ${
+                selectedMessage?.bundle_id === message.bundle_id
+                  ? "bg-primary/10 border-primary/50"
+                  : "bg-background/30 border-border"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-mono font-semibold text-primary uppercase">
+                      {message.source_station}
+                    </span>
+                    <Badge className={`${getPriorityColor(message.priority)} text-[10px] px-1.5 py-0`}>
+                      {message.priority}
+                    </Badge>
+                    {message.is_complete ? (
+                      <CheckCircle className="w-3 h-3 text-success" />
+                    ) : (
+                      <Clock className="w-3 h-3 text-amber-500" />
+                    )}
+                  </div>
+                  <div className="text-[10px] text-secondary font-mono mb-1">
+                    Bundle: {message.bundle_id_short}
+                  </div>
+                  {message.fragments_total > 1 && (
+                    <div className="flex items-center gap-2 text-[10px] text-secondary">
+                      <Package className="w-3 h-3" />
+                      <span className="font-mono">
+                        {message.fragments_received}/{message.fragments_total} fragments
                       </span>
-                      <Badge className={getPriorityColor(message.priority)}>
-                        {message.priority}
-                      </Badge>
-                      {message.is_complete ? (
-                        <CheckCircle className="w-4 h-4 text-success" />
-                      ) : (
-                        <Clock className="w-4 h-4 text-amber-500" />
+                      {!message.is_complete && (
+                        <span className="text-amber-500">(Incomplete)</span>
                       )}
                     </div>
-                    <div className="text-xs text-secondary font-mono mb-1">
-                      Bundle: {message.bundle_id_short}
+                  )}
+                  {message.decrypted_payload && (
+                    <div className="mt-2 text-[11px] text-terminal-text font-mono bg-background/50 p-2 rounded border border-border">
+                      {message.decrypted_payload.substring(0, 100)}
+                      {message.decrypted_payload.length > 100 ? "..." : ""}
                     </div>
-                    {message.fragments_total > 1 && (
-                      <div className="flex items-center gap-2 text-xs text-secondary">
-                        <Package className="w-3 h-3" />
-                        <span>
-                          {message.fragments_received}/{message.fragments_total} fragments
-                        </span>
-                        {!message.is_complete && (
-                          <span className="text-amber-500">(Incomplete)</span>
-                        )}
-                      </div>
-                    )}
-                    {message.decrypted_payload && (
-                      <div className="mt-2 text-sm text-terminal-text font-mono bg-background/50 p-2 rounded border border-border">
-                        {message.decrypted_payload.substring(0, 100)}
-                        {message.decrypted_payload.length > 100 ? "..." : ""}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-xs text-secondary flex-shrink-0">
-                    {formatTime(message.delivered_at)}
-                  </div>
+                  )}
+                </div>
+                <div className="text-[10px] text-secondary font-mono flex-shrink-0">
+                  {formatTime(message.delivered_at)}
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      </CardContent>
+            </div>
+          ))
+        )}
+      </div>
     </Card>
   );
 };
