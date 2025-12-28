@@ -222,9 +222,10 @@ class NetworkDTNManager(DTNBundleManager):
         destination_station = bundle_data.get('destination_station', 'iss')
         priority = bundle_data.get('priority', 'NORMAL')
         
-        # Verify checksum
+        # Verify checksum (on encrypted payload)
         import zlib
-        calculated_checksum = zlib.crc32(payload.encode('utf-8')) & 0xffffffff
+        encrypted_payload = bundle_data.get('encrypted_payload', payload)
+        calculated_checksum = zlib.crc32(encrypted_payload.encode('utf-8')) & 0xffffffff
         
         if calculated_checksum != checksum:
             # Checksum mismatch - send NAK
@@ -251,11 +252,22 @@ class NetworkDTNManager(DTNBundleManager):
             elif priority.upper() == "BULK":
                 priority_enum = BundlePriority.BULK
             
+            # Handle encrypted payload (new format) or plaintext (legacy)
+            encrypted_payload = bundle_data.get('encrypted_payload', payload)
+            payload_hash = bundle_data.get('payload_hash')
+            
+            # If payload is not encrypted, it should have been encrypted by sender
+            # For network received bundles, assume payload is already encrypted
+            if not payload_hash:
+                import hashlib
+                payload_hash = hashlib.sha256(encrypted_payload.encode('utf-8')).hexdigest()
+            
             bundle = DTNBundle(
                 bundle_id=bundle_id,
                 source_station=source_station,
                 destination_station=destination_station,
-                payload=payload,
+                encrypted_payload=encrypted_payload,
+                payload_hash=payload_hash,
                 priority=priority_enum,
                 created_at=datetime.now(timezone.utc),
                 ttl_hours=24,  # Default TTL
@@ -384,7 +396,8 @@ class NetworkDTNManager(DTNBundleManager):
         client_script = os.path.join(script_dir, 'mininet_nodes', 'dtn_client.py')
         
         import shlex
-        payload_escaped = shlex.quote(bundle.payload)
+        # Use encrypted_payload (bundles are now always encrypted)
+        payload_escaped = shlex.quote(bundle.encrypted_payload)
         
         # Build command to run client script within source node's namespace
         cmd = 'python3 {} {} {} {} {} {} {}'.format(

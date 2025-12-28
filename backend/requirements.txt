@@ -7,3 +7,4 @@ numpy==1.26.2
 requests==2.31.0
 mininet
 sqlite3
+cryptography==41.0.7

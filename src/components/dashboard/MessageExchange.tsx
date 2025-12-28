@@ -198,7 +198,7 @@ const MessageExchange = ({
         deliveredBundles.forEach(bundle => {
           const newMessage: Message = {
             id: messageIdCounter.current++,
-            text: `[${bundle.source_station.toUpperCase()}] Bundle delivered: ${bundle.payload}`,
+            text: `[${bundle.source_station.toUpperCase()}] Bundle delivered: 🔐 ${bundle.payload_hash_short || bundle.payload || 'encrypted'}`,
             success: true,
             time: new Date().toLocaleTimeString('en-US', { hour12: false }),
             station: bundle.source_station,
@@ -542,7 +542,7 @@ const MessageExchange = ({
                 <div
                   key={bundle.bundle_id}
                   className={`px-2 py-1 rounded-full text-[10px] font-mono border ${getPriorityBg(bundle.priority)}`}
-                  title={bundle.payload}
+                  title={`Encrypted payload: ${bundle.payload_hash_short || bundle.payload || 'encrypted'}`}
                 >
                   <span className={getPriorityColor(bundle.priority)}>
                     {bundle.bundle_id_short}

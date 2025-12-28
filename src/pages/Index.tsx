@@ -11,6 +11,7 @@ import TrafficFlowMonitor from "@/components/analytics/TrafficFlowMonitor";
 import TransmissionHistory from "@/components/analytics/TransmissionHistory";
 import TransmissionMonitor from "@/components/dashboard/TransmissionMonitor";
 import NetworkTopology from "@/components/dashboard/NetworkTopology";
+import ISSView from "@/pages/ISSView";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useState, useEffect } from "react";
 import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
@@ -18,6 +19,7 @@ import { DTNBundle } from '@/types/dtnBundle';
 
 const Index = () => {
   const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
+  const [viewMode, setViewMode] = useState<"ground" | "iss">("ground");
 
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
   const [activeStationId, setActiveStationId] = useState('toronto');
@@ -72,9 +74,28 @@ const Index = () => {
   const activeStationData = orbitalData?.stations?.find(s => s.id === activeStationId);
   const selectedStationData = orbitalData?.stations?.find(s => s.id === selectedStationId);
   
+  if (viewMode === "iss") {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header 
+          isConnected={orbitalConnected} 
+          connectionError={orbitalConnected ? null : "Connecting..."}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+        />
+        <ISSView />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Header isConnected={orbitalConnected} connectionError={orbitalConnected ? null : "Connecting..."} />
+      <Header 
+        isConnected={orbitalConnected} 
+        connectionError={orbitalConnected ? null : "Connecting..."}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
       
       {/* Full-screen Globe Section */}
       <section className="h-screen w-full relative">

@@ -288,6 +288,64 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     # Backward compatibility
                     retransmitted_bundle_ids.append(retrans_info)
             
+            # Process ISS bundles first (if any visible station)
+            if dtn_manager.iss_queue:
+                visible_stations = [s for s in stations_data if s["is_visible"]]
+                if visible_stations:
+                    # Find station with highest elevation
+                    best_station = max(visible_stations, key=lambda s: s["look_angles"]["elevation"])
+                    station_id = best_station["id"]
+                    
+                    # Check if already transmitting
+                    is_transmitting = any(
+                        t.from_station == "ISS" or t.to_station == station_id
+                        for t in dtn_manager.active_transmissions.values()
+                    )
+                    
+                    if not is_transmitting:
+                        next_bundle_id = dtn_manager.iss_queue[0]
+                        next_bundle = dtn_manager.bundles.get(next_bundle_id)
+                        
+                        if next_bundle:
+                            # Calculate route from ISS to destination
+                            route = dtn_manager.find_route(
+                                "ISS",
+                                next_bundle.destination_station,
+                                stations_data,
+                                visited=[]
+                            )
+                            
+                            if route and len(route) > 1:
+                                next_bundle.route = route
+                                dtn_manager.db_manager.update_bundle_route(next_bundle_id, route)
+                                
+                                # First hop is the visible station
+                                first_hop = route[1]  # route[0] is "ISS"
+                                
+                                # Calculate data rate
+                                radial_velocity_data = tracker.calculate_radial_velocity(
+                                    best_station["lat"],
+                                    best_station["lon"]
+                                )
+                                
+                                link_budget = link_budget_calc.calculate_link_budget(
+                                    best_station["look_angles"]["range_km"],
+                                    best_station["look_angles"]["elevation"],
+                                    radial_velocity_data["radial_velocity_kmps"]
+                                )
+                                
+                                data_rate_bps = link_budget.get("data_rate_bps", 0)
+                                
+                                if data_rate_bps > 0:
+                                    print(f"🛰️  ISS transmitting bundle {next_bundle_id[:8]} to {first_hop.upper()} (route: {' → '.join(route)})")
+                                    dtn_manager.start_transmission(
+                                        next_bundle_id,
+                                        "ISS",
+                                        first_hop,
+                                        data_rate_bps,
+                                        retransmission_count=0
+                                    )
+            
             # Process DTN bundles - start new transmissions or forward
             for station_data in stations_data:
                 station_id = station_data["id"]
@@ -741,6 +799,75 @@ async def create_bundle(request: BundleCreateRequest):
         return {"success": True, "bundle": bundle.to_dict()}
     except Exception as e:
         print(f"❌ Error creating bundle: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+# ISS Interface API Endpoints
+class ISSReplyRequest(BaseModel):
+    destination_station: str
+    payload: str
+    priority: str = "NORMAL"
+    ttl_hours: int = 24
+
+@app.get("/api/iss/messages")
+async def get_iss_messages():
+    """Get all bundles delivered to ISS with fragment status"""
+    try:
+        messages = dtn_manager.get_iss_delivered_bundles()
+        return {"messages": messages}
+    except Exception as e:
+        print(f"❌ Error getting ISS messages: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"messages": [], "error": str(e)}
+
+@app.get("/api/iss/fragments/{bundle_id}")
+async def get_fragment_status(bundle_id: str):
+    """Get fragment status for a bundle"""
+    try:
+        status = dtn_manager.get_fragment_status(bundle_id)
+        if status:
+            return status
+        else:
+            return {"error": "Bundle not found"}
+    except Exception as e:
+        print(f"❌ Error getting fragment status: {e}")
+        return {"error": str(e)}
+
+@app.post("/api/iss/messages/{bundle_id}/reassemble")
+async def reassemble_message(bundle_id: str):
+    """Reassemble fragments and decrypt message"""
+    try:
+        result = dtn_manager.reassemble_and_decrypt_bundle(bundle_id)
+        if result:
+            return {"success": True, "message": result}
+        else:
+            return {"success": False, "error": "Fragments incomplete or bundle not found"}
+    except Exception as e:
+        print(f"❌ Error reassembling message: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/iss/messages/reply")
+async def create_iss_reply(request: ISSReplyRequest):
+    """Create reply bundle from ISS to ground station"""
+    try:
+        print(f"📤 ISS creating reply bundle to {request.destination_station}")
+        bundle = dtn_manager.create_iss_reply_bundle(
+            destination_station=request.destination_station,
+            payload=request.payload,
+            priority=request.priority,
+            ttl_hours=request.ttl_hours
+        )
+        
+        # Calculate route for the reply
+        # We need station data - get it from the latest orbital data if available
+        # For now, route will be calculated during transmission
+        return {"success": True, "bundle": bundle.to_dict()}
+    except Exception as e:
+        print(f"❌ Error creating ISS reply: {e}")
         import traceback
         traceback.print_exc()
         return {"success": False, "error": str(e)}
