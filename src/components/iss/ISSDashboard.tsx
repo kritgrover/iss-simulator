@@ -15,10 +15,10 @@ interface ISSDashboardProps {
       next_pass_minutes: number;
     }>;
     link_status?: {
-      connection_state: string;
-      data_rate_kbps: number;
+      connection_state: "ACQUIRED" | "DEGRADED" | "IDLE";
       snr_db: number;
-    };
+      data_rate_kbps?: number;
+    } | null;
   } | null;
 }
 
@@ -79,12 +79,14 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
                   {orbitalData.link_status.connection_state}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-secondary">Data Rate:</span>
-                <span className="font-mono text-primary">
-                  {orbitalData.link_status.data_rate_kbps.toFixed(1)} kbps
-                </span>
-              </div>
+              {orbitalData.link_status.data_rate_kbps !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-secondary">Data Rate:</span>
+                  <span className="font-mono text-primary">
+                    {orbitalData.link_status.data_rate_kbps.toFixed(1)} kbps
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-secondary">SNR:</span>
                 <span className="font-mono text-primary">
