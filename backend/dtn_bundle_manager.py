@@ -822,8 +822,10 @@ class DTNBundleManager:
         security_failure_reason = None
         
         if bundle.bab:
+            # Pass the correct to_station (receiver) for BAB verification
+            # The BAB was created with from_station -> to_station, so we need to verify with the same parameters
             bab_valid = self.bsp_security.verify_bab(
-                bundle.to_dict(), bundle.bab, from_station
+                bundle.to_dict(), bundle.bab, from_station, to_station
             )
             if not bab_valid:
                 security_valid = False
