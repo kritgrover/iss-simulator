@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useISSMessages } from "@/hooks/useISSMessages";
 import { Activity, MessageSquare, Radio, TrendingUp } from "lucide-react";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface ISSDashboardProps {
   orbitalData?: {
@@ -36,10 +37,30 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
   return (
     <Card className="p-4">
       <div className="mb-3">
-        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
-          <Activity className="w-3 h-3" />
-          ISS DASHBOARD
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
+            <Activity className="w-3 h-3" />
+            ISS DASHBOARD
+          </h3>
+          <InfoTooltip
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong>ISS Dashboard</strong>
+                </div>
+                <div className="text-xs space-y-1.5">
+                  <p>View from the ISS perspective showing received data and link status.</p>
+                  <p><strong>Orbital Parameters:</strong> ISS position and velocity from onboard systems</p>
+                  <p><strong>Link Status:</strong> Current communication link quality with active ground station</p>
+                  <p><strong>Visible Stations:</strong> Ground stations currently in line-of-sight (elevation &gt; 0°)</p>
+                  <p><strong>Messages:</strong> DTN bundles received and reassembled on ISS</p>
+                  <p><strong>Message Reassembly:</strong> Large messages may be fragmented into multiple bundles. ISS reassembles them when all fragments arrive.</p>
+                  <p><strong>Understanding:</strong> This view shows what ISS "sees" - which stations are in contact and what data has been received.</p>
+                </div>
+              </div>
+            }
+          />
+        </div>
       </div>
       <div className="space-y-4">
         {/* Orbital Parameters */}
@@ -134,6 +155,22 @@ const ISSDashboard = ({ orbitalData }: ISSDashboardProps) => {
           <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary flex items-center gap-2">
             <MessageSquare className="w-3 h-3" />
             Messages
+            <InfoTooltip
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong>Message Statistics</strong>
+                  </div>
+                  <div className="text-xs space-y-1.5">
+                    <p><strong>Received:</strong> Total number of message bundles received by ISS</p>
+                    <p><strong>Complete:</strong> Messages that have been fully reassembled</p>
+                    <p><strong>Pending:</strong> Messages waiting for missing fragments</p>
+                    <p><strong>Fragmentation:</strong> Large messages are split into multiple bundles for transmission. ISS must receive all fragments before reassembly.</p>
+                    <p><strong>Understanding:</strong> Pending messages indicate some bundles are still in transit or lost. DTN will retry delivery automatically.</p>
+                  </div>
+                </div>
+              }
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="p-2 bg-background/50 rounded border border-border">

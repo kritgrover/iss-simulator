@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { DTNBundle } from '@/types/dtnBundle';
 import { GroundStation } from '@/types/groundStation';
+import { InfoTooltip } from '@/components/ui/info-tooltip';
 
 interface ActiveTransmission {
   bundle_id: string;
@@ -695,7 +696,36 @@ const NetworkTopology = ({
   return (
     <Card className="p-4">
       <div className="mb-3">
-        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary">NETWORK TOPOLOGY</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary">NETWORK TOPOLOGY</h3>
+          <InfoTooltip
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong>Network Topology</strong>
+                </div>
+                <div className="text-xs space-y-1.5">
+                  <p>Visual representation of the DTN mesh network showing bundle routing and link states.</p>
+                  <p><strong>Nodes:</strong></p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-2">
+                    <li>Blue center: ISS</li>
+                    <li>Colored circles: Ground stations (color = station identity)</li>
+                    <li>Orange nodes: Currently transmitting</li>
+                  </ul>
+                  <p><strong>Link States:</strong></p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-2">
+                    <li>Orange: Active transmission or waiting for ISS contact</li>
+                    <li>Green: Completed transmission</li>
+                    <li>Gray: Idle (no activity)</li>
+                  </ul>
+                  <p><strong>DTN Routing:</strong> Bundles are routed through the mesh network. Each station can forward bundles to other stations or directly to ISS when in contact.</p>
+                  <p><strong>ISS Links:</strong> Dashed lines show potential ISS connections. Only active when station has line-of-sight.</p>
+                  <p><strong>Understanding:</strong> The topology shows how bundles flow through the network. Orange links indicate active data transfer. Green shows completed paths.</p>
+                </div>
+              </div>
+            }
+          />
+        </div>
         <p className="text-[11px] text-secondary/60 mt-1">Mininet Network Graph</p>
       </div>
 

@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useEffect, useState } from "react";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface LinkBudgetChartProps {
   linkBudgetHistory?: Array<{
@@ -40,9 +41,37 @@ const LinkBudgetChart = ({ linkBudgetHistory, currentSNR }: LinkBudgetChartProps
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">
-          LINK BUDGET
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">
+            LINK BUDGET
+          </h3>
+          <InfoTooltip
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong>Link Budget Analysis</strong>
+                </div>
+                <div className="text-xs space-y-1.5">
+                  <p>This chart shows Signal-to-Noise Ratio (SNR) over time, which is the key metric for link quality.</p>
+                  <p><strong>Link Budget Formula:</strong></p>
+                  <p className="font-mono text-[10px] bg-muted p-1 rounded">
+                    SNR = P_tx + G_tx + G_rx - FSPL - L_atm - L_cable - N_floor
+                  </p>
+                  <p><strong>Components:</strong></p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-2">
+                    <li>P_tx: Transmit power (43 dBm for ISS)</li>
+                    <li>G_tx, G_rx: Antenna gains (12 dBi ISS, 18 dBi ground)</li>
+                    <li>FSPL: Free space path loss (depends on distance & frequency)</li>
+                    <li>L_atm: Atmospheric attenuation (depends on elevation angle)</li>
+                    <li>N_floor: System noise floor (~-139 dBm)</li>
+                  </ul>
+                  <p><strong>Reference Lines:</strong> Green (10 dB) = excellent, Yellow (3 dB) = minimum viable</p>
+                  <p><strong>Understanding:</strong> Higher SNR means better link quality and higher achievable data rates. SNR varies with distance and elevation during the pass.</p>
+                </div>
+              </div>
+            }
+          />
+        </div>
         {hasData && currentSNR !== undefined && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-secondary">Current SNR:</span>

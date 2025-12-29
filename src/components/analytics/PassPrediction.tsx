@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface PassPredictionProps {
   handoffCount?: number;
@@ -15,9 +16,34 @@ const PassPrediction = ({ handoffCount = 0, stationsUsed = 1 }: PassPredictionPr
 
   return (
     <Card className="p-4">
-      <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary mb-3">
-        PASS PREDICTION
-      </h3>
+      <div className="flex items-center gap-2 mb-3">
+        <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">
+          PASS PREDICTION
+        </h3>
+        <InfoTooltip
+          content={
+            <div className="space-y-2">
+              <div>
+                <strong>Pass Prediction</strong>
+              </div>
+              <div className="text-xs space-y-1.5">
+                <p>Shows upcoming ISS passes over the ground station network.</p>
+                <p><strong>Pass Calculation:</strong> Based on TLE (Two-Line Element) orbital data and station coordinates.</p>
+                <p><strong>Start Time:</strong> AOS (Acquisition of Signal) - when ISS rises above horizon (elevation > 0°)</p>
+                <p><strong>Duration:</strong> Time from AOS to LOS (Loss of Signal) - when ISS sets below horizon</p>
+                <p><strong>Max Elevation:</strong> Highest point of pass. Higher elevation = shorter distance = better signal quality</p>
+                <p><strong>Statistics:</strong></p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li>Total Handoffs: Number of station transitions during passes</li>
+                  <li>Stations Used: Count of unique stations that had contact</li>
+                  <li>Success Rate: Percentage of packets successfully delivered</li>
+                </ul>
+                <p><strong>Understanding:</strong> Passes typically last 5-10 minutes. Multiple stations provide continuous coverage as ISS orbits.</p>
+              </div>
+            </div>
+          }
+        />
+      </div>
       
       <div className="space-y-1">
         <div className="grid grid-cols-3 gap-2 pb-2 border-b border-border text-[10px] text-secondary uppercase">

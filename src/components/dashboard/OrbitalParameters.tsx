@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { useState, useEffect } from "react";
 import { Satellite } from "lucide-react";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface OrbitalParametersProps {
   orbitalData?: {
@@ -107,9 +108,31 @@ const OrbitalParameters = ({ orbitalData }: OrbitalParametersProps) => {
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">
-          ORBITAL PARAMETERS
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary">
+            ORBITAL PARAMETERS
+          </h3>
+          <InfoTooltip
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong>Orbital Parameters</strong>
+                </div>
+                <div className="text-xs space-y-1.5">
+                  <p>Real-time ISS position and motion parameters calculated from TLE (Two-Line Element) data.</p>
+                  <p><strong>Latitude/Longitude:</strong> ISS position on Earth's surface (sub-satellite point)</p>
+                  <p><strong>Altitude:</strong> Height above Earth's surface (~400 km for ISS)</p>
+                  <p><strong>Velocity:</strong> Orbital speed (~7.66 km/s for ISS at 400km altitude)</p>
+                  <p><strong>Azimuth:</strong> Compass direction from station to ISS (0°=North, 90°=East)</p>
+                  <p><strong>Elevation:</strong> Angle above horizon (0°=horizon, 90°=overhead). Higher = better signal</p>
+                  <p><strong>Range:</strong> Straight-line distance from station to ISS. Calculated from altitude and elevation angle.</p>
+                  <p><strong>Pass Duration:</strong> Time ISS is above horizon. Typically 5-10 minutes per pass.</p>
+                  <p><strong>Understanding:</strong> These parameters determine link quality. Closer range and higher elevation = better communication.</p>
+                </div>
+              </div>
+            }
+          />
+        </div>
         {orbitalData && (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />

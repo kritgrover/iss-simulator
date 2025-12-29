@@ -5,6 +5,7 @@ import { Send, CheckCircle, XCircle, Clock, Package, Zap } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import ProtocolStack from "./ProtocolStack";
 import { DTNBundle } from "@/types/dtnBundle";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface CustodyAck {
   type: "custody_ack";
@@ -427,8 +428,40 @@ const MessageExchange = ({
     <Card className="p-4 flex h-[640px]">
       {/* Protocol Stack - Left side */}
       <div className="w-32 flex-shrink-0 border-r border-border pr-3 mr-3">
-        <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
-          PROTOCOL
+        <div className="flex items-center gap-1.5 mb-2">
+          <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary">
+            PROTOCOL
+          </div>
+          <InfoTooltip
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong>Protocol Stack</strong>
+                </div>
+                <div className="text-xs space-y-1.5">
+                  <p>Shows the layered protocol architecture during message transmission.</p>
+                  <p><strong>TCP Mode Stack:</strong></p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-2">
+                    <li>Application: HTTP payload</li>
+                    <li>Transport: TCP (reliable delivery)</li>
+                    <li>Network: IP (routing)</li>
+                    <li>Physical: RF transmission</li>
+                  </ul>
+                  <p><strong>DTN Mode Stack:</strong></p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-2">
+                    <li>Application: HTTP payload</li>
+                    <li>Bundle: DTN layer (store-and-forward)</li>
+                    <li>Transport: TCP</li>
+                    <li>Network: IP</li>
+                    <li>Physical: RF</li>
+                  </ul>
+                  <p><strong>Animation:</strong> Shows packet moving through layers during transmission. Uplink = down arrow, Downlink = up arrow.</p>
+                  <p><strong>DTN Layer (Red):</strong> Unique to DTN mode. Handles bundle encapsulation, routing, and custody transfer.</p>
+                  <p><strong>Understanding:</strong> Each layer adds headers and handles specific functions. The stack ensures reliable data delivery across the network.</p>
+                </div>
+              </div>
+            }
+          />
         </div>
         <ProtocolStack direction={protocolDirection} mode={mode} />
       </div>
@@ -437,27 +470,55 @@ const MessageExchange = ({
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mode Toggle */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex gap-1 bg-background/50 rounded p-1">
-            <button
-              onClick={() => setMode("TCP")}
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                mode === "TCP"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-secondary hover:text-foreground"
-              }`}
-            >
-              TCP MODE
-            </button>
-            <button
-              onClick={() => setMode("DTN")}
-              className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                mode === "DTN"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-secondary hover:text-foreground"
-              }`}
-            >
-              DTN MODE
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 bg-background/50 rounded p-1">
+              <button
+                onClick={() => setMode("TCP")}
+                className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
+                  mode === "TCP"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-secondary hover:text-foreground"
+                }`}
+              >
+                TCP MODE
+              </button>
+              <button
+                onClick={() => setMode("DTN")}
+                className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
+                  mode === "DTN"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-secondary hover:text-foreground"
+                }`}
+              >
+                DTN MODE
+              </button>
+            </div>
+            <InfoTooltip
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong>Communication Modes</strong>
+                  </div>
+                  <div className="text-xs space-y-1.5">
+                    <p><strong>TCP Mode:</strong> Traditional connection-oriented protocol. Requires continuous connection.</p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2">
+                      <li>Only works when Toronto station is active and connected</li>
+                      <li>Real-time bidirectional communication</li>
+                      <li>Immediate acknowledgments</li>
+                      <li>Fails if connection is interrupted</li>
+                    </ul>
+                    <p><strong>DTN Mode:</strong> Delay-Tolerant Networking for intermittent connectivity.</p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2">
+                      <li>Works even when station is not in contact</li>
+                      <li>Bundles are stored and forwarded when contact available</li>
+                      <li>Supports custody transfer between stations</li>
+                      <li>Handles network disruptions gracefully</li>
+                    </ul>
+                    <p><strong>Use Case:</strong> TCP for real-time commands, DTN for reliable data delivery in intermittent networks.</p>
+                  </div>
+                </div>
+              }
+            />
           </div>
           
           <div className="flex items-center gap-4">
@@ -558,37 +619,72 @@ const MessageExchange = ({
 
         {/* Priority Selection for DTN */}
         {mode === "DTN" && (
-          <div className="flex gap-1 mb-2">
-            <button
-              onClick={() => setBundlePriority("EXPEDITED")}
-              className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
-                bundlePriority === "EXPEDITED"
-                  ? "bg-red-500/30 border border-red-500 text-red-500"
-                  : "bg-background/50 border border-border text-secondary hover:text-foreground"
-              }`}
-            >
-              EXPEDITED
-            </button>
-            <button
-              onClick={() => setBundlePriority("NORMAL")}
-              className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
-                bundlePriority === "NORMAL"
-                  ? "bg-cyan-500/30 border border-cyan-500 text-cyan-500"
-                  : "bg-background/50 border border-border text-secondary hover:text-foreground"
-              }`}
-            >
-              NORMAL
-            </button>
-            <button
-              onClick={() => setBundlePriority("BULK")}
-              className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
-                bundlePriority === "BULK"
-                  ? "bg-gray-500/30 border border-gray-500 text-gray-500"
-                  : "bg-background/50 border border-border text-secondary hover:text-foreground"
-              }`}
-            >
-              BULK
-            </button>
+          <div className="space-y-1.5 mb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-secondary uppercase">Bundle Priority</span>
+              <InfoTooltip
+                content={
+                  <div className="space-y-2">
+                    <div>
+                      <strong>Bundle Priority Levels</strong>
+                    </div>
+                    <div className="text-xs space-y-1.5">
+                      <p><strong>EXPEDITED (Red):</strong> Highest priority bundles</p>
+                      <ul className="list-disc list-inside space-y-0.5 ml-2">
+                        <li>Transmitted first when contact available</li>
+                        <li>Used for urgent commands or critical data</li>
+                        <li>May preempt lower priority bundles</li>
+                      </ul>
+                      <p><strong>NORMAL (Cyan):</strong> Standard priority</p>
+                      <ul className="list-disc list-inside space-y-0.5 ml-2">
+                        <li>Default for most communications</li>
+                        <li>Transmitted after expedited bundles</li>
+                        <li>Balanced throughput and fairness</li>
+                      </ul>
+                      <p><strong>BULK (Gray):</strong> Lowest priority</p>
+                      <ul className="list-disc list-inside space-y-0.5 ml-2">
+                        <li>Transmitted when bandwidth available</li>
+                        <li>Used for large data transfers</li>
+                        <li>May be delayed during high traffic</li>
+                      </ul>
+                      <p><strong>Routing:</strong> Priority affects forwarding order in DTN network. Higher priority bundles are routed first through the mesh.</p>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setBundlePriority("EXPEDITED")}
+                className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
+                  bundlePriority === "EXPEDITED"
+                    ? "bg-red-500/30 border border-red-500 text-red-500"
+                    : "bg-background/50 border border-border text-secondary hover:text-foreground"
+                }`}
+              >
+                EXPEDITED
+              </button>
+              <button
+                onClick={() => setBundlePriority("NORMAL")}
+                className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
+                  bundlePriority === "NORMAL"
+                    ? "bg-cyan-500/30 border border-cyan-500 text-cyan-500"
+                    : "bg-background/50 border border-border text-secondary hover:text-foreground"
+                }`}
+              >
+                NORMAL
+              </button>
+              <button
+                onClick={() => setBundlePriority("BULK")}
+                className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
+                  bundlePriority === "BULK"
+                    ? "bg-gray-500/30 border border-gray-500 text-gray-500"
+                    : "bg-background/50 border border-border text-secondary hover:text-foreground"
+                }`}
+              >
+                BULK
+              </button>
+            </div>
           </div>
         )}
 

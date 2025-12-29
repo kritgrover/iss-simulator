@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Signal, SignalHigh, SignalLow, SignalZero } from "lucide-react";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface LinkStatusProps {
   linkStatus?: {
@@ -54,9 +55,27 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary">
-          LINK STATUS
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-semibold tracking-wider uppercase text-secondary">
+            LINK STATUS
+          </h3>
+          <InfoTooltip
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong>Link Status Overview</strong>
+                </div>
+                <div className="text-xs space-y-1.5">
+                  <p>This panel shows real-time RF communication parameters between the ground station and ISS.</p>
+                  <p><strong>Signal Strength:</strong> Received power in dBm. Calculated from transmit power, antenna gains, path loss, and atmospheric attenuation.</p>
+                  <p><strong>SNR:</strong> Signal-to-Noise Ratio indicates link quality. Higher values mean better communication reliability.</p>
+                  <p><strong>Doppler Shift:</strong> Frequency change due to relative motion. Blue shift (negative) = approaching, Red shift (positive) = receding.</p>
+                  <p><strong>Latency:</strong> One-way propagation delay based on distance and speed of light (~3ms per 1000km).</p>
+                </div>
+              </div>
+            }
+          />
+        </div>
         {linkStatus && (
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
@@ -71,6 +90,28 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
           <div className="flex items-center gap-2">
             <SignalIcon className={`w-4 h-4 ${signalQuality.color}`} />
             <span className="text-[13px] text-secondary">Signal Strength</span>
+            <InfoTooltip
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong>Signal Strength (dBm)</strong>
+                  </div>
+                  <div className="text-xs space-y-1.5">
+                    <p><strong>Calculation:</strong> Received Power = Transmit Power + Antenna Gains - Path Loss - Atmospheric Loss - Cable Loss</p>
+                    <p><strong>Path Loss:</strong> FSPL = 20×log₁₀(distance) + 20×log₁₀(frequency) + 32.44</p>
+                    <p><strong>Thresholds:</strong></p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2">
+                      <li>Excellent: ≥ -60 dBm</li>
+                      <li>Good: -75 to -60 dBm</li>
+                      <li>Fair: -90 to -75 dBm</li>
+                      <li>Weak: -105 to -90 dBm</li>
+                      <li>Very Weak: -115 to -105 dBm</li>
+                    </ul>
+                    <p><strong>Meaning:</strong> Higher (less negative) values indicate stronger received signal. Signal degrades with distance and atmospheric conditions.</p>
+                  </div>
+                </div>
+              }
+            />
           </div>
           <div className="text-right">
             <div className={`text-[13px] font-mono font-semibold ${signalQuality.color}`}>
@@ -94,7 +135,24 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
       {/* Connection State and Latency */}
       <div className="grid grid-cols-2 gap-3 pt-2">
         <div>
-          <div className="text-[13px] text-secondary mb-1">Connection</div>
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-[13px] text-secondary">Connection</span>
+            <InfoTooltip
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong>Connection State</strong>
+                  </div>
+                  <div className="text-xs space-y-1.5">
+                    <p><strong>ACQUIRED:</strong> Strong link established, full communication capability</p>
+                    <p><strong>DEGRADED:</strong> Weak link, reduced data rate, higher error probability</p>
+                    <p><strong>IDLE:</strong> No active connection, station out of range or below horizon</p>
+                    <p><strong>Determined by:</strong> Signal strength threshold (-90 dBm) and SNR (&gt;3 dB minimum)</p>
+                  </div>
+                </div>
+              }
+            />
+          </div>
           <div className="flex items-center gap-2">
             <div 
               className={`w-2 h-2 rounded-full ${
@@ -109,7 +167,25 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
           </div>
         </div>
         <div>
-          <div className="text-[13px] text-secondary mb-1">Latency</div>
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-[13px] text-secondary">Latency</span>
+            <InfoTooltip
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong>Latency (Propagation Delay)</strong>
+                  </div>
+                  <div className="text-xs space-y-1.5">
+                    <p><strong>Calculation:</strong> Latency = Distance / Speed of Light</p>
+                    <p>Speed of Light: 299,792.458 km/s</p>
+                    <p><strong>Example:</strong> At 400 km range: ~1.33 ms one-way delay</p>
+                    <p><strong>Meaning:</strong> Time for signal to travel from transmitter to receiver. Round-trip latency is double this value. This is the fundamental limit - cannot be reduced.</p>
+                    <p><strong>Impact:</strong> Affects real-time communication. For ISS at ~400km altitude, latency is typically 1-3ms, which is negligible for most applications.</p>
+                  </div>
+                </div>
+              }
+            />
+          </div>
           <div className="text-[13px] font-mono text-right">
             {latency > 0 ? `${latency.toFixed(2)} ms` : '--'}
           </div>
@@ -118,7 +194,27 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
 
       {/* Doppler Shift Visualization */}
       <div className="pt-2">
-        <div className="text-[13px] text-secondary mb-1">Doppler Shift</div>
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-[13px] text-secondary">Doppler Shift</span>
+          <InfoTooltip
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong>Doppler Shift</strong>
+                </div>
+                <div className="text-xs space-y-1.5">
+                  <p><strong>Calculation:</strong> Δf = (v_r × f₀) / c</p>
+                  <p>Where: v_r = radial velocity, f₀ = carrier frequency, c = speed of light</p>
+                  <p><strong>Blue Shift (Negative):</strong> ISS approaching ground station. Frequency increases.</p>
+                  <p><strong>Red Shift (Positive):</strong> ISS receding from ground station. Frequency decreases.</p>
+                  <p><strong>Maximum:</strong> Occurs at closest approach when radial velocity is highest (~7.66 km/s orbital velocity).</p>
+                  <p><strong>Impact:</strong> Requires frequency tracking/compensation in receivers. At 145.8 MHz, max shift is ~±3.8 kHz.</p>
+                  <p><strong>Understanding:</strong> The visualization shows the frequency offset. Blue indicates approaching, red indicates receding.</p>
+                </div>
+              </div>
+            }
+          />
+        </div>
         <div className="text-[13px] font-mono mb-2">
           {dopplerShift > 0 ? '+' : ''}{dopplerShift.toFixed(3)} kHz
         </div>
@@ -194,7 +290,31 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
       {/* SNR Display */}
       <div className="pt-2 border-t border-border">
         <div className="flex justify-between items-center">
-          <span className="text-[13px] text-secondary">Signal-to-Noise Ratio</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[13px] text-secondary">Signal-to-Noise Ratio</span>
+            <InfoTooltip
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong>Signal-to-Noise Ratio (SNR)</strong>
+                  </div>
+                  <div className="text-xs space-y-1.5">
+                    <p><strong>Calculation:</strong> SNR (dB) = Received Power (dBm) - Noise Floor (dBm)</p>
+                    <p><strong>Noise Floor:</strong> k×T×B where k=Boltzmann constant, T=system temperature (125K), B=bandwidth (12.5 kHz)</p>
+                    <p><strong>Thresholds:</strong></p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2">
+                      <li>Excellent: &gt;10 dB (very low error rate)</li>
+                      <li>Good: 6-10 dB (low error rate)</li>
+                      <li>Marginal: 3-6 dB (moderate errors, may need retransmission)</li>
+                      <li>Unusable: &lt;3 dB (high error rate, link unreliable)</li>
+                    </ul>
+                    <p><strong>Data Rate:</strong> Uses Shannon-Hartley: C = B × log₂(1 + SNR). Higher SNR enables higher data rates.</p>
+                    <p><strong>Meaning:</strong> Measures how much stronger the signal is compared to background noise. Critical for determining link quality and achievable data rate.</p>
+                  </div>
+                </div>
+              }
+            />
+          </div>
           <div className="flex items-center gap-2">
             <div 
               className={`w-2 h-2 rounded-full ${

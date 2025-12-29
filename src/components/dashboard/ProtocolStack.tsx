@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface ProtocolStackProps {
   direction: 'uplink' | 'downlink' | null;

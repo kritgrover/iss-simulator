@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 import { DTNBundle } from "@/types/dtnBundle";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface Station {
   id: string;
@@ -168,15 +169,60 @@ const TrafficFlowMonitor = ({
 
   return (
     <Card className="p-5">
-      <h3 className="text-sm font-semibold tracking-wider uppercase text-secondary mb-4">
-        TRAFFIC FLOW MONITOR
-      </h3>
+      <div className="flex items-center gap-2 mb-4">
+        <h3 className="text-sm font-semibold tracking-wider uppercase text-secondary">
+          TRAFFIC FLOW MONITOR
+        </h3>
+        <InfoTooltip
+          content={
+            <div className="space-y-2">
+              <div>
+                <strong>Traffic Flow Monitor</strong>
+              </div>
+              <div className="text-xs space-y-1.5">
+                <p>Real-time network traffic and bundle queue monitoring.</p>
+                <p><strong>Bandwidth Calculation:</strong> Based on link budget data rate from Shannon-Hartley theorem:</p>
+                <p className="font-mono text-[10px] bg-muted p-1 rounded">C = B × log₂(1 + SNR) × efficiency</p>
+                <p>Where B = 12.5 kHz bandwidth, efficiency ≈ 75%</p>
+                <p><strong>Uplink:</strong> Ground → ISS transmission rate</p>
+                <p><strong>Downlink:</strong> ISS → Ground transmission rate (typically 20% higher due to ISS transmit power)</p>
+                <p><strong>Bundle Queue:</strong> Shows all queued bundles across the network. Color indicates priority.</p>
+                <p><strong>Queue Stats:</strong></p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li>Avg Queue Time: Average time bundles wait before transmission</li>
+                  <li>Network Depth: Total bundles in network queues</li>
+                </ul>
+                <p><strong>Throughput Graph:</strong> Historical bandwidth usage over last 60 seconds. Helps identify traffic patterns and bottlenecks.</p>
+                <p><strong>Understanding:</strong> Higher bandwidth = faster data transfer. Queue depth indicates network load. Multiple active links sum their bandwidth.</p>
+              </div>
+            </div>
+          }
+        />
+      </div>
 
       {/* 1. Uplink/Downlink Bandwidth Usage*/}
       <div className="mb-4 space-y-3">
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">UPLINK</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">UPLINK</span>
+              <InfoTooltip
+                content={
+                  <div className="space-y-2">
+                    <div>
+                      <strong>Uplink Bandwidth</strong>
+                    </div>
+                    <div className="text-xs space-y-1.5">
+                      <p>Data rate from ground station to ISS.</p>
+                      <p><strong>Calculation:</strong> Based on SNR and Shannon capacity theorem.</p>
+                      <p><strong>Max Capacity:</strong> 200 kbps theoretical limit for this system.</p>
+                      <p><strong>Factors:</strong> Signal strength, SNR, modulation efficiency, link quality.</p>
+                      <p><strong>Understanding:</strong> Shows how much data can be sent per second. Higher values mean faster uplink transmission.</p>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
             <span className="text-xs font-mono text-muted-foreground">
               {uplinkBandwidth.toFixed(1)} kbps / 200 kbps
             </span>
@@ -190,7 +236,24 @@ const TrafficFlowMonitor = ({
         </div>
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">DOWNLINK</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">DOWNLINK</span>
+              <InfoTooltip
+                content={
+                  <div className="space-y-2">
+                    <div>
+                      <strong>Downlink Bandwidth</strong>
+                    </div>
+                    <div className="text-xs space-y-1.5">
+                      <p>Data rate from ISS to ground station.</p>
+                      <p><strong>Calculation:</strong> Typically 20% higher than uplink due to ISS transmit power (43 dBm) and antenna gain.</p>
+                      <p><strong>Max Capacity:</strong> 200 kbps theoretical limit.</p>
+                      <p><strong>Understanding:</strong> ISS can transmit faster than ground stations can send. This is typical in satellite communications.</p>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
             <span className="text-xs font-mono text-muted-foreground">
               {downlinkBandwidth.toFixed(1)} kbps / 200 kbps
             </span>
@@ -223,7 +286,30 @@ const TrafficFlowMonitor = ({
       {/* 2. Bundle Queue Visualization*/}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
+            <InfoTooltip
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong>Network Bundle Queue</strong>
+                  </div>
+                  <div className="text-xs space-y-1.5">
+                    <p>Visualization of all bundles waiting for transmission across the entire network.</p>
+                    <p><strong>Color Coding:</strong></p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-2">
+                      <li>Red: EXPEDITED priority</li>
+                      <li>Cyan: NORMAL priority</li>
+                      <li>Gray: BULK priority</li>
+                    </ul>
+                    <p><strong>Queue Time:</strong> Average time bundles wait before transmission starts.</p>
+                    <p><strong>Network Depth:</strong> Total number of bundles in all station queues.</p>
+                    <p><strong>Understanding:</strong> More bundles = higher network load. Priority determines transmission order. Queue time increases with network congestion.</p>
+                  </div>
+                </div>
+              }
+            />
+          </div>
           <span className="text-xs font-mono text-muted-foreground">
             Queue: {allQueuedBundles.length} bundles
           </span>

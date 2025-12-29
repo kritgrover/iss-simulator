@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle, Clock } from "lucide-react";
 import { DTNBundle } from "@/types/dtnBundle";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface BundleJourney {
   bundle_id_short: string;
@@ -72,8 +73,37 @@ const TransmissionHistory = ({ deliveredBundles = [] }: TransmissionHistoryProps
 
   return (
     <Card className="p-4">
-      <div className="text-xs uppercase tracking-wide text-secondary mb-3">
-        TRANSMISSION HISTORY (LAST 5 DELIVERED)
+      <div className="flex items-center gap-2 mb-3">
+        <div className="text-xs uppercase tracking-wide text-secondary">
+          TRANSMISSION HISTORY (LAST 5 DELIVERED)
+        </div>
+        <InfoTooltip
+          content={
+            <div className="space-y-2">
+              <div>
+                <strong>Transmission History</strong>
+              </div>
+              <div className="text-xs space-y-1.5">
+                <p>Shows the last 5 successfully delivered DTN bundles with their complete journey.</p>
+                <p><strong>Bundle Routing:</strong> Bundles follow a multi-hop path through the DTN network:</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li>Source station creates bundle</li>
+                  <li>Forwarded through mesh network (ground stations)</li>
+                  <li>Delivered to ISS when contact available</li>
+                </ul>
+                <p><strong>Delivery Time:</strong> Time from bundle creation to final delivery. Includes:</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li>Queue time at each station</li>
+                  <li>Transmission time over links</li>
+                  <li>Waiting for ISS contact</li>
+                </ul>
+                <p><strong>Hops:</strong> Shows the complete path. Each arrow represents a transmission between nodes.</p>
+                <p><strong>Priority:</strong> Color indicates bundle priority (Red=Expedited, Cyan=Normal, Gray=Bulk)</p>
+                <p><strong>Understanding:</strong> Longer paths and higher queue depths increase delivery time. DTN ensures delivery even with intermittent connectivity.</p>
+              </div>
+            </div>
+          }
+        />
       </div>
       <div className="space-y-3">
         {bundleHistory.length === 0 ? (
