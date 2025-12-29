@@ -113,6 +113,7 @@ const OrbitalParameters = ({ orbitalData }: OrbitalParametersProps) => {
             ORBITAL PARAMETERS
           </h3>
           <InfoTooltip
+            side="left"
             content={
               <div className="space-y-2">
                 <div>

@@ -23,14 +23,15 @@ export const InfoTooltip = ({ content, side = "top", className = "" }: InfoToolt
         </TooltipTrigger>
         <TooltipContent 
           side={side} 
-          className="max-w-sm p-3 text-sm bg-popover border border-border shadow-lg z-[9999]"
+          className="max-w-sm p-3 text-sm bg-popover border border-border shadow-lg"
           sideOffset={8}
           align="start"
           avoidCollisions={true}
+          collisionPadding={8}
           style={{ 
             backgroundColor: 'hsl(var(--popover))',
             color: 'hsl(var(--popover-foreground))',
-            zIndex: 9999
+            zIndex: 99999,
           }}
         >
           <div className="space-y-1.5 text-popover-foreground">
