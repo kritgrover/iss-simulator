@@ -239,19 +239,19 @@ class BSPSecurityManager:
             raise Exception(f"BAB creation failed: {str(e)}")
     
     def verify_bab(self, bundle_data: Dict, bab: BundleAuthenticationBlock, 
-                   from_station: str) -> bool:
+                   from_station: str, to_station: str) -> bool:
         """
         Verify Bundle Authentication Block
         Returns True if authentication is valid, False otherwise
         """
         try:
-            # Recreate message
+            # Recreate message with the same parameters used when creating the BAB
             message = json.dumps({
                 "bundle_id": bundle_data.get("bundle_id"),
                 "source": bundle_data.get("source_station"),
                 "destination": bundle_data.get("destination_station"),
                 "from_station": from_station,
-                "to_station": bundle_data.get("current_custodian", ""),
+                "to_station": to_station,
                 "payload_hash": bundle_data.get("payload_hash", "")
             }, sort_keys=True).encode('utf-8')
             
