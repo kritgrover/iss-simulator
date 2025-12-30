@@ -1,6 +1,7 @@
 import { Circle, Satellite, Radio } from "lucide-react";
 import { useMET } from "@/hooks/useMET";
 import { Button } from "@/components/ui/button";
+import EducationalPanel from "@/components/EducationalPanel";
 
 interface HeaderProps {
   isConnected: boolean;
@@ -46,6 +47,7 @@ const Header = ({ isConnected, connectionError, viewMode = "ground", onViewModeC
             </Button>
           </div>
         )}
+        <EducationalPanel />
         <div className="flex items-center gap-2">
           {isConnected ? (
             <>
