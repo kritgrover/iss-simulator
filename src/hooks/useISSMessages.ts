@@ -121,9 +121,10 @@ export const useISSMessages = () => {
   }, []);
 
   useEffect(() => {
+    // Fetch immediately when hook is used
     fetchMessages();
-    // Poll for updates every 2 seconds
-    const interval = setInterval(fetchMessages, 2000);
+    // Poll for updates every 1 second for more responsive updates
+    const interval = setInterval(fetchMessages, 1000);
     return () => clearInterval(interval);
   }, [fetchMessages]);
 

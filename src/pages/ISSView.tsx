@@ -13,9 +13,14 @@ import { useISSMessages, ISSMessage } from "@/hooks/useISSMessages";
 
 const ISSView = () => {
   const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
-  const { messages } = useISSMessages();
+  const { messages, fetchMessages } = useISSMessages();
   const [selectedMessage, setSelectedMessage] = useState<ISSMessage | null>(null);
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
+
+  // Force immediate fetch when ISS view mounts to catch any messages that arrived while on ground view
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
 
   // Update stations with orbital data
   useEffect(() => {
