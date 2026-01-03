@@ -13,7 +13,6 @@ const MessageReply = () => {
   const { sendReply } = useISSMessages();
   const [destinationStation, setDestinationStation] = useState<string>("");
   const [message, setMessage] = useState("");
-  const [priority, setPriority] = useState<"EXPEDITED" | "NORMAL" | "BULK">("NORMAL");
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
@@ -36,7 +35,8 @@ const MessageReply = () => {
     }
 
     setSending(true);
-    const success = await sendReply(destinationStation, message, priority);
+    // Always use EXPEDITED priority for ISS messages
+    const success = await sendReply(destinationStation, message, "EXPEDITED");
     setSending(false);
 
     if (success) {
@@ -46,26 +46,12 @@ const MessageReply = () => {
       });
       setMessage("");
       setDestinationStation("");
-      setPriority("NORMAL");
     } else {
       toast({
         title: "Error",
         description: "Failed to send reply. Please try again.",
         variant: "destructive",
       });
-    }
-  };
-
-  const getPriorityColor = (p: string) => {
-    switch (p) {
-      case "EXPEDITED":
-        return "text-red-400";
-      case "NORMAL":
-        return "text-cyan-400";
-      case "BULK":
-        return "text-gray-400";
-      default:
-        return "text-gray-400";
     }
   };
 
@@ -102,29 +88,6 @@ const MessageReply = () => {
                   </div>
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Priority Selector */}
-        <div className="space-y-2">
-          <Label htmlFor="priority" className="text-[10px] font-semibold tracking-wider uppercase text-secondary">
-            Priority
-          </Label>
-          <Select value={priority} onValueChange={(v) => setPriority(v as typeof priority)}>
-            <SelectTrigger id="priority" className="h-8 text-[11px] font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="EXPEDITED" className="text-[11px] font-mono">
-                <span className={getPriorityColor("EXPEDITED")}>EXPEDITED</span>
-              </SelectItem>
-              <SelectItem value="NORMAL" className="text-[11px] font-mono">
-                <span className={getPriorityColor("NORMAL")}>NORMAL</span>
-              </SelectItem>
-              <SelectItem value="BULK" className="text-[11px] font-mono">
-                <span className={getPriorityColor("BULK")}>BULK</span>
-              </SelectItem>
             </SelectContent>
           </Select>
         </div>
