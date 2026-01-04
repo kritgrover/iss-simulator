@@ -307,20 +307,11 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         next_bundle = dtn_manager.bundles.get(next_bundle_id)
                         
                         if next_bundle:
-                            # Calculate route from ISS to destination
-                            route = dtn_manager.find_route(
-                                "ISS",
-                                next_bundle.destination_station,
-                                stations_data,
-                                visited=[]
-                            )
-                            
-                            if route and len(route) > 1:
-                                next_bundle.route = route
-                                dtn_manager.db_manager.update_bundle_route(next_bundle_id, route)
-                                
-                                # First hop is the visible station
-                                first_hop = route[1]  # route[0] is "ISS"
+                            # Handle broadcast bundles differently
+                            if next_bundle.destination_station.upper() == "BROADCAST":
+                                # For broadcast, just send to first visible station
+                                # Flooding will happen when it's received
+                                first_hop = station_id
                                 
                                 # Calculate data rate
                                 radial_velocity_data = tracker.calculate_radial_velocity(
@@ -337,7 +328,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                 data_rate_bps = link_budget.get("data_rate_bps", 0)
                                 
                                 if data_rate_bps > 0:
-                                    print(f"🛰️  ISS transmitting bundle {next_bundle_id[:8]} to {first_hop.upper()} (route: {' → '.join(route)})")
+                                    print(f"📡 ISS transmitting BROADCAST bundle {next_bundle_id[:8]} to {first_hop.upper()} (will flood to all stations)")
                                     dtn_manager.start_transmission(
                                         next_bundle_id,
                                         "ISS",
@@ -345,6 +336,45 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                         data_rate_bps,
                                         retransmission_count=0
                                     )
+                            else:
+                                # Calculate route from ISS to destination
+                                route = dtn_manager.find_route(
+                                    "ISS",
+                                    next_bundle.destination_station,
+                                    stations_data,
+                                    visited=[]
+                                )
+                                
+                                if route and len(route) > 1:
+                                    next_bundle.route = route
+                                    dtn_manager.db_manager.update_bundle_route(next_bundle_id, route)
+                                    
+                                    # First hop is the visible station
+                                    first_hop = route[1]  # route[0] is "ISS"
+                                    
+                                    # Calculate data rate
+                                    radial_velocity_data = tracker.calculate_radial_velocity(
+                                        best_station["lat"],
+                                        best_station["lon"]
+                                    )
+                                    
+                                    link_budget = link_budget_calc.calculate_link_budget(
+                                        best_station["look_angles"]["range_km"],
+                                        best_station["look_angles"]["elevation"],
+                                        radial_velocity_data["radial_velocity_kmps"]
+                                    )
+                                    
+                                    data_rate_bps = link_budget.get("data_rate_bps", 0)
+                                    
+                                    if data_rate_bps > 0:
+                                        print(f"🛰️  ISS transmitting bundle {next_bundle_id[:8]} to {first_hop.upper()} (route: {' → '.join(route)})")
+                                        dtn_manager.start_transmission(
+                                            next_bundle_id,
+                                            "ISS",
+                                            first_hop,
+                                            data_rate_bps,
+                                            retransmission_count=0
+                                        )
             
             # Process DTN bundles - start new transmissions or forward
             for station_data in stations_data:
@@ -426,7 +456,38 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         )
                         continue  # Skip forwarding logic, bundle is being sent to ISS
                 
-                # Case 2: Bundle destination is a ground station OR this station can't see ISS
+                # Case 2: Handle BROADCAST bundles - flood to all neighbors
+                if bundle_destination.upper() == "BROADCAST":
+                    # Mark this station as having received the broadcast
+                    if not dtn_manager.has_received_broadcast(next_bundle_id, station_id):
+                        dtn_manager.mark_broadcast_received(next_bundle_id, station_id)
+                        print(f"📡 {station_id.upper()} received BROADCAST bundle {next_bundle_id[:8]}")
+                    
+                    # Get neighbors that haven't received the broadcast yet
+                    unreceived_neighbors = dtn_manager.get_broadcast_unreceived_neighbors(next_bundle_id, station_id)
+                    
+                    if unreceived_neighbors:
+                        # Forward to first unreceived neighbor (we'll process others in next iterations)
+                        next_neighbor = unreceived_neighbors[0]
+                        print(f"📡 {station_id.upper()} flooding BROADCAST bundle {next_bundle_id[:8]} to {next_neighbor.upper()} ({len(unreceived_neighbors)} neighbors remaining)")
+                        
+                        ground_link_bps = 100_000_000
+                        dtn_manager.start_transmission(
+                            next_bundle_id,
+                            station_id,
+                            next_neighbor,
+                            ground_link_bps,
+                            retransmission_count=0
+                        )
+                        continue
+                    else:
+                        # All neighbors have received it - check if we need to continue flooding
+                        # This station has received and forwarded to all neighbors
+                        print(f"✅ {station_id.upper()} has forwarded BROADCAST bundle {next_bundle_id[:8]} to all neighbors")
+                        # Bundle will remain in queue but won't be forwarded again from here
+                        continue
+                
+                # Case 3: Bundle destination is a ground station OR this station can't see ISS
                 if bundle_destination.upper() != "ISS" or not is_visible:
                     # Check if bundle has a route - if so, use it for forwarding
                     next_hop_from_route = dtn_manager.get_next_hop_from_route(next_bundle_id)
@@ -809,6 +870,7 @@ class ISSReplyRequest(BaseModel):
     payload: str
     priority: str = "NORMAL"
     ttl_hours: int = 24
+    is_broadcast: bool = False
 
 @app.get("/api/iss/messages")
 async def get_iss_messages():
@@ -852,15 +914,24 @@ async def reassemble_message(bundle_id: str):
 
 @app.post("/api/iss/messages/reply")
 async def create_iss_reply(request: ISSReplyRequest):
-    """Create reply bundle from ISS to ground station"""
+    """Create reply bundle from ISS to ground station (or broadcast)"""
     try:
-        print(f"📤 ISS creating reply bundle to {request.destination_station}")
-        bundle = dtn_manager.create_iss_reply_bundle(
-            destination_station=request.destination_station,
-            payload=request.payload,
-            priority=request.priority,
-            ttl_hours=request.ttl_hours
-        )
+        if request.is_broadcast:
+            print(f"📡 ISS creating broadcast bundle to all stations")
+            bundle = dtn_manager.create_iss_reply_bundle(
+                destination_station="BROADCAST",
+                payload=request.payload,
+                priority=request.priority,
+                ttl_hours=request.ttl_hours
+            )
+        else:
+            print(f"📤 ISS creating reply bundle to {request.destination_station}")
+            bundle = dtn_manager.create_iss_reply_bundle(
+                destination_station=request.destination_station,
+                payload=request.payload,
+                priority=request.priority,
+                ttl_hours=request.ttl_hours
+            )
         
         # Calculate route for the reply
         # We need station data - get it from the latest orbital data if available

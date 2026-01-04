@@ -180,6 +180,9 @@ class DTNBundleManager:
         self.mesh_connections = mesh_connections or []  # List of (station1, station2) tuples
         self.db_manager = DatabaseManager()
         
+        # Broadcast tracking: bundle_id -> set of station_ids that have received it
+        self.broadcast_received: Dict[str, set] = {}
+        
         # BSP Security and Fragmentation
         self.bsp_security = BSPSecurityManager()
         self.fragmentation_manager = BundleFragmentationManager()
@@ -994,6 +997,10 @@ class DTNBundleManager:
             bundle.hops.append(from_station)
             bundle.forwarded_to = None
             
+            # Handle broadcast bundles - mark as received
+            if bundle.destination_station.upper() == "BROADCAST":
+                self.mark_broadcast_received(bundle_id, from_station)
+            
             # Update DB
             self.db_manager.update_bundle_status(
                 bundle_id=bundle_id,
@@ -1017,8 +1024,11 @@ class DTNBundleManager:
                 # Sort the destination queue after adding bundle
                 self._sort_station_queue(from_station)
             
-            print(f"📨 Bundle {bundle_id[:8]} ACK received - custody transferred to {from_station.upper()}")
-            print(f"   Path so far: {' → '.join(bundle.hops)}")
+            if bundle.destination_station.upper() == "BROADCAST":
+                print(f"📡 Bundle {bundle_id[:8]} ACK received - BROADCAST received at {from_station.upper()}, will flood to neighbors")
+            else:
+                print(f"📨 Bundle {bundle_id[:8]} ACK received - custody transferred to {from_station.upper()}")
+                print(f"   Path so far: {' → '.join(bundle.hops)}")
             
             # If route exists and we're not at final destination, prepare for next hop forwarding
             if bundle.route and len(bundle.route) > 0:
@@ -1534,3 +1544,35 @@ class DTNBundleManager:
         bundles.sort(key=lambda b: priority_order.get(b["priority"], 99))
         
         return bundles
+    
+    def get_neighbors(self, station_id: str) -> List[str]:
+        """Get all neighbor stations for a given station based on mesh connections"""
+        neighbors = []
+        for conn in self.mesh_connections:
+            station1, station2 = conn
+            if station1 == station_id:
+                neighbors.append(station2)
+            elif station2 == station_id:
+                neighbors.append(station1)
+        return neighbors
+    
+    def get_broadcast_unreceived_neighbors(self, bundle_id: str, station_id: str) -> List[str]:
+        """Get neighbors of a station that haven't received a broadcast bundle yet"""
+        if bundle_id not in self.broadcast_received:
+            self.broadcast_received[bundle_id] = set()
+        
+        neighbors = self.get_neighbors(station_id)
+        received = self.broadcast_received[bundle_id]
+        
+        # Return neighbors that haven't received the broadcast
+        return [n for n in neighbors if n not in received]
+    
+    def mark_broadcast_received(self, bundle_id: str, station_id: str):
+        """Mark that a station has received a broadcast bundle"""
+        if bundle_id not in self.broadcast_received:
+            self.broadcast_received[bundle_id] = set()
+        self.broadcast_received[bundle_id].add(station_id)
+    
+    def has_received_broadcast(self, bundle_id: str, station_id: str) -> bool:
+        """Check if a station has already received a broadcast bundle"""
+        return bundle_id in self.broadcast_received and station_id in self.broadcast_received[bundle_id]
