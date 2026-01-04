@@ -543,7 +543,12 @@ class DTNBundleManager:
                     
                     # Store fragment bundle
                     self.bundles[fragment.fragment_id] = fragment_bundle
-                    self.station_queues[source_station].append(fragment.fragment_id)
+                    
+                    if source_station.upper() == "ISS":
+                        self.iss_queue.append(fragment.fragment_id)
+                    else:
+                        self.station_queues[source_station].append(fragment.fragment_id)
+                        
                     fragment_bundles.append(fragment_bundle)
                     
                     # Save to DB
@@ -575,9 +580,15 @@ class DTNBundleManager:
                 )
                 
                 self.bundles[bundle_id] = bundle
-                self.station_queues[source_station].append(bundle_id)
+                if source_station.upper() == "ISS":
+                    self.iss_queue.append(bundle_id)
+                else:
+                    self.station_queues[source_station].append(bundle_id)
             
-            self._sort_station_queue(source_station)
+            if source_station.upper() == "ISS":
+                self._sort_iss_queue()
+            else:
+                self._sort_station_queue(source_station)
             
             # Save to DB (encrypted payload stored) - only for non-fragmented bundles
             # Fragmented bundles are already saved above
@@ -1480,14 +1491,6 @@ class DTNBundleManager:
             priority=priority,
             ttl_hours=ttl_hours
         )
-        
-        # Set current custodian to ISS (special handling)
-        bundle.current_custodian = "ISS"
-        bundle.hops = ["ISS"]
-        
-        # Add to ISS queue instead of station queue
-        self.iss_queue.append(bundle.bundle_id)
-        self._sort_iss_queue()
         
         # Save to DB
         bundle_dict = bundle.to_dict()
