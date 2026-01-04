@@ -158,7 +158,7 @@ const ISSView = () => {
           {/* Right Panel - Reply Interface */}
           <ResizablePanel defaultSize={30} minSize={20} className="bg-panel">
             <div className="h-full p-4 space-y-4 overflow-y-auto">
-              <MessageReply />
+              <MessageReply stations={stations} />
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
