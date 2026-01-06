@@ -4,6 +4,7 @@ import ISSEarthView from "@/components/iss/ISSEarthView";
 import MessageInbox from "@/components/iss/MessageInbox";
 import MessageReassembly from "@/components/iss/MessageReassembly";
 import MessageReply from "@/components/iss/MessageReply";
+import ISSNetworkQueue from "@/components/iss/ISSNetworkQueue";
 import ISSDashboard from "@/components/iss/ISSDashboard";
 import OrbitalParameters from "@/components/dashboard/OrbitalParameters";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -159,6 +160,10 @@ const ISSView = () => {
           <ResizablePanel defaultSize={30} minSize={20} className="bg-panel">
             <div className="h-full p-4 space-y-4 overflow-y-auto">
               <MessageReply stations={stations} />
+              <ISSNetworkQueue 
+                bundles={orbitalData?.iss_queue || []} 
+                stations={stations} 
+              />
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

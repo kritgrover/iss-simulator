@@ -115,6 +115,7 @@ export interface OrbitalData {
     data_rate_kbps: number;
   }>;
   dtn_queues: Record<string, DTNBundle[]>;
+  iss_queue?: DTNBundle[];
   custody_acks: CustodyAck[];
   delivered_bundles: DTNBundle[];
   active_transmissions: ActiveTransmission[];
