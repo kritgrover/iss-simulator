@@ -403,11 +403,18 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     continue  # Already transmitting or waiting for ACK, don't start another
                 
                 # Queue is now pre-sorted by priority in dtn_bundle_manager
-                next_bundle_id = queue[0]
-                next_bundle = dtn_manager.bundles.get(next_bundle_id)
+                # Skip bundles that are waiting for ACK or already delivered/expired
+                next_bundle_id = None
+                next_bundle = None
+                for bundle_id in queue:
+                    bundle = dtn_manager.bundles.get(bundle_id)
+                    if bundle and bundle.status not in [BundleStatus.WAITING_ACK, BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
+                        next_bundle_id = bundle_id
+                        next_bundle = bundle
+                        break
                 
-                if not next_bundle:
-                    continue  # Bundle doesn't exist
+                if not next_bundle_id or not next_bundle:
+                    continue  # No valid bundle to process
                 
                 # Check bundle destination first
                 bundle_destination = next_bundle.destination_station
@@ -827,7 +834,16 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "mesh_connections": mesh_connections
             }
             
-            await websocket.send_json(data)
+            try:
+                await websocket.send_json(data)
+            except Exception as send_error:
+                print(f"❌ Error sending websocket data: {send_error}")
+                # Check if it's a connection error
+                if "connection closed" in str(send_error).lower() or "1005" in str(send_error):
+                    print("   Connection closed by client, stopping...")
+                    break
+                raise
+            
             await asyncio.sleep(1)
             
     except WebSocketDisconnect:

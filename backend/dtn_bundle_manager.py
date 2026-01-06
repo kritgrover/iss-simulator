@@ -801,31 +801,29 @@ class DTNBundleManager:
         
         bundle = self.bundles[bundle_id]
         
-        # Get transmission destination from bundle.forwarded_to
-        to_station = bundle.forwarded_to
-        from_station = bundle.current_custodian
-        
-        # Check if transmission was already completed
-        if not to_station:
-            # Check if bundle is already delivered or in a final state
-            if bundle.status == BundleStatus.DELIVERED:
-                return None
-
-            # Check if bundle is waiting for ACK
-            if bundle.status == BundleStatus.WAITING_ACK:
-                return None
-
-            # If bundle is in a transmitting state but no forwarded_to, it might be a race condition
-            # Try to get destination from active transmission
-            if bundle_id in self.active_transmissions:
-                to_station = self.active_transmissions[bundle_id].to_station
-                if to_station:
-                    bundle.forwarded_to = to_station  # Restore it
-                else:
-                    print(f"⚠️  Cannot complete transmission for {bundle_id[:8]} - no destination set")
+        # Get transmission info from active transmission record (most reliable)
+        # This tells us who sent it and where it's going
+        if bundle_id in self.active_transmissions:
+            transmission = self.active_transmissions[bundle_id]
+            from_station = transmission.from_station  # Actual sender
+            to_station = transmission.to_station  # Actual receiver
+            bundle.forwarded_to = to_station
+        else:
+            # Fallback to bundle state (shouldn't happen normally)
+            to_station = bundle.forwarded_to
+            from_station = bundle.current_custodian
+            
+            # Check if transmission was already completed
+            if not to_station:
+                # Check if bundle is already delivered or in a final state
+                if bundle.status == BundleStatus.DELIVERED:
                     return None
-            else:
-                # No active transmission and no forwarded_to - likely already completed
+
+                # Check if bundle is waiting for ACK
+                if bundle.status == BundleStatus.WAITING_ACK:
+                    return None
+
+                print(f"⚠️  Cannot complete transmission for {bundle_id[:8]} - no active transmission and no destination set")
                 return None
         
         # Security verification at intermediate node (SA node)
@@ -838,8 +836,11 @@ class DTNBundleManager:
         if bundle.bab:
             # Pass the correct to_station (receiver) for BAB verification
             # The BAB was created with from_station -> to_station, so we need to verify with the same parameters
+            # Create bundle dict without BAB for verification (BAB shouldn't be in the message used for verification)
+            bundle_dict_for_verification = bundle.to_dict()
+            bundle_dict_for_verification["payload_hash"] = bundle.payload_hash  # Ensure payload_hash is included
             bab_valid = self.bsp_security.verify_bab(
-                bundle.to_dict(), bundle.bab, from_station, to_station
+                bundle_dict_for_verification, bundle.bab, from_station, to_station
             )
             if not bab_valid:
                 security_valid = False
@@ -872,14 +873,8 @@ class DTNBundleManager:
         
         # All verifications must pass
         if security_valid and checksum_valid:
-            # Create new BAB for next hop (if forwarding)
-            if to_station != bundle.destination_station and to_station != "ISS":
-                # Create new BAB for forwarding to next station
-                bundle_dict = bundle.to_dict()
-                bundle_dict["payload_hash"] = bundle.payload_hash
-                new_bab = self.bsp_security.create_bab(bundle_dict, to_station, "")
-                bundle.bab = new_bab
-                print(f"   🔐 New BAB created for next hop")
+            # Note: New BAB for next hop will be created in start_transmission() when forwarding begins
+            # We don't know the next hop destination here, so we can't create it yet
             
             print(f"✅ Bundle {bundle_id[:8]} received at {to_station}, all security checks passed - sending ACK")
             

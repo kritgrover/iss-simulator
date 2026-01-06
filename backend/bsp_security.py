@@ -246,25 +246,43 @@ class BSPSecurityManager:
         """
         try:
             # Recreate message with the same parameters used when creating the BAB
-            message = json.dumps({
+            payload_hash = bundle_data.get("payload_hash", "")
+            if not payload_hash:
+                print(f"⚠️  BAB verification: payload_hash is missing from bundle_data")
+                print(f"   Available keys: {list(bundle_data.keys())}")
+            
+            message_dict = {
                 "bundle_id": bundle_data.get("bundle_id"),
                 "source": bundle_data.get("source_station"),
                 "destination": bundle_data.get("destination_station"),
                 "from_station": from_station,
                 "to_station": to_station,
-                "payload_hash": bundle_data.get("payload_hash", "")
-            }, sort_keys=True).encode('utf-8')
+                "payload_hash": payload_hash
+            }
+            message = json.dumps(message_dict, sort_keys=True).encode('utf-8')
             
             # Recompute MAC
             key = self._derive_key(bab.security_source)
             expected_mac_bytes = hmac.new(key, message, hashlib.sha256).digest()
             expected_mac = base64.b64encode(expected_mac_bytes).decode('utf-8')
             
+            # Debug: Print comparison details
+            if bab.mac != expected_mac:
+                print(f"⚠️  BAB MAC mismatch:")
+                print(f"   Bundle ID: {bundle_data.get('bundle_id', 'unknown')[:8]}")
+                print(f"   From: {from_station}, To: {to_station}")
+                print(f"   BAB security_source: {bab.security_source}")
+                print(f"   Expected MAC: {expected_mac[:16]}...")
+                print(f"   Received MAC: {bab.mac[:16]}...")
+                print(f"   Message used: {message.decode('utf-8')[:200]}...")
+            
             # Constant-time comparison to prevent timing attacks
             return hmac.compare_digest(bab.mac, expected_mac)
             
         except Exception as e:
             print(f"⚠️  BAB verification error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def create_pib(self, payload_hash: str, source_station: str) -> PayloadIntegrityBlock:
