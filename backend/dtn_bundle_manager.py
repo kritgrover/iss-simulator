@@ -1301,16 +1301,22 @@ class DTNBundleManager:
     def cleanup_expired(self):
         """Remove expired bundles from all queues"""
         for bundle_id, bundle in list(self.bundles.items()):
-            if bundle.is_expired() and bundle.status != BundleStatus.DELIVERED:
+            # Skip bundles that are already delivered or expired
+            if bundle.is_expired() and bundle.status not in [BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
                 bundle.status = BundleStatus.EXPIRED
                 
                 # Update DB
                 self.db_manager.update_bundle_status(bundle_id=bundle_id, status=BundleStatus.EXPIRED.value)
                 
-                # Remove from station queue
+                # Remove from station queues
                 for queue in self.station_queues.values():
                     if bundle_id in queue:
                         queue.remove(bundle_id)
+                
+                # Remove from ISS queue too
+                if bundle_id in self.iss_queue:
+                    self.iss_queue.remove(bundle_id)
+                
                 # Mark as failed if not already tracked
                 if bundle_id not in self.failed_bundles:
                     self._mark_bundle_failed(bundle_id, "ttl_exceeded")

@@ -488,10 +488,19 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         )
                         continue
                     else:
-                        # All neighbors have received it - check if we need to continue flooding
-                        # This station has received and forwarded to all neighbors
+                        # All neighbors have received it - remove from this station's queue
                         print(f"✅ {station_id.upper()} has forwarded BROADCAST bundle {next_bundle_id[:8]} to all neighbors")
-                        # Bundle will remain in queue but won't be forwarded again from here
+                        # Remove from this station's queue to prevent infinite loop
+                        if next_bundle_id in dtn_manager.station_queues.get(station_id, []):
+                            dtn_manager.station_queues[station_id].remove(next_bundle_id)
+                        # Mark bundle as delivered at this station
+                        next_bundle.status = BundleStatus.DELIVERED
+                        next_bundle.delivered_at = datetime.now(timezone.utc)
+                        dtn_manager.db_manager.update_bundle_status(
+                            bundle_id=next_bundle_id,
+                            status=BundleStatus.DELIVERED.value,
+                            delivered_at=next_bundle.delivered_at.isoformat()
+                        )
                         continue
                 
                 # Case 3: Bundle destination is a ground station OR this station can't see ISS
