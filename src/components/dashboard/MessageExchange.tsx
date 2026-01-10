@@ -341,7 +341,7 @@ const MessageExchange = ({
           const bundle = result.bundle;
           const newMessage: Message = {
             id: messageIdCounter.current++,
-            text: `[${stationName}] Bundle created: ${message}`,
+            text: `[${stationName}] Bundle created: 🔐 ${bundle.payload_hash_short || bundle.payload_hash || 'encrypted'}`,
             success: true,
             time: timestamp,
             station: activeStationId,
