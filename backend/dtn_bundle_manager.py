@@ -1298,16 +1298,6 @@ class DTNBundleManager:
             for t in self.active_transmissions.values()
         ]
     
-    def process_contact(self, station_id: str, is_visible: bool, 
-                       next_visible_station: Optional[str] = None,
-                       data_rate_bps: float = 0):
-        """
-        Process bundles during contact opportunities - DEPRECATED
-        This method is kept for compatibility but transmission management
-        is now handled in main.py
-        """
-        pass
-    
     def cleanup_expired(self):
         """Remove expired bundles from all queues"""
         for bundle_id, bundle in list(self.bundles.items()):

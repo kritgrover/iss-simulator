@@ -322,19 +322,6 @@ class ISSTopology:
         except Exception as e:
             error("❌ Failed to apply link parameters: {}\n".format(e))
     
-    def remove_iss_link(self, station_id: str):
-        """
-        Remove ISS link to a ground station
-        
-        Args:
-            station_id: Ground station ID
-        """
-        if station_id not in self.iss_links:
-            return
-        
-        del self.iss_links[station_id]
-        info("🗑️  Removed ISS link to {}\n".format(station_id))
-    
     def get_node(self, node_id: str) -> Optional[Host]:
         """Get a node by ID (case-insensitive for ISS)"""
         node_id_lower = node_id.lower()
@@ -358,31 +345,6 @@ class ISSTopology:
                     return ip
             except (AttributeError, RuntimeError) as e:
                 error("❌ Error getting IP for {}: {}\n".format(node_id, e))
-            return None
-        return None
-    
-    def get_all_station_ips(self) -> Dict[str, str]:
-        """Get all ground station IP addresses"""
-        result = {}
-        for station_id, node in self.station_nodes.items():
-            try:
-                ip = node.IP()
-                if ip:
-                    result[station_id] = ip
-            except (AttributeError, RuntimeError):
-                # IP not available yet or node not started
-                pass
-        return result
-    
-    def get_iss_ip(self) -> Optional[str]:
-        """Get ISS node IP address"""
-        if self.iss_node:
-            try:
-                ip = self.iss_node.IP()
-                if ip:
-                    return ip
-            except (AttributeError, RuntimeError) as e:
-                error("❌ Error getting ISS IP: {}\n".format(e))
             return None
         return None
     

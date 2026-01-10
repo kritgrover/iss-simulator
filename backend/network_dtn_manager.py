@@ -138,22 +138,6 @@ class NetworkDTNManager(DTNBundleManager):
         except Exception as e:
             print("❌ Failed to start server for {}: {}".format(node_id, e))
     
-    def _handle_connection(self, node_id: str, client_socket: socket.socket, addr):
-        """Handle incoming connection"""
-        try:
-            while self.running:
-                # Receive message
-                message = self._receive_message(client_socket)
-                if not message:
-                    break
-                
-                # Process message
-                self._process_message(node_id, message, client_socket)
-        except Exception as e:
-            print("❌ Connection error for {}: {}".format(node_id, e))
-        finally:
-            client_socket.close()
-    
     def _receive_message(self, sock: socket.socket) -> Optional[Dict]:
         """Receive a message from socket"""
         try:

@@ -258,31 +258,3 @@ class OrbitalTracker:
             "duration_minutes": duration_minutes,
             "is_in_pass": True
         }
-    
-    def generate_coverage_cone(self, ground_lat: float, ground_lon: float, 
-                               opening_angle: float = 70, segments: int = 32) -> Dict:
-        """Generate 3D cone vertices for ground station coverage"""
-        
-        look_angles = self.calculate_look_angles(ground_lat, ground_lon)
-        
-        vertices = []
-        
-        apex = {"lat": float(ground_lat), "lon": float(ground_lon), "alt": 0.0}
-        
-        for i in range(segments):
-            angle = (2 * np.pi * i) / segments
-            lat_offset = (opening_angle / 2) * np.cos(angle) / 111
-            lon_offset = (opening_angle / 2) * np.sin(angle) / (111 * np.cos(np.radians(ground_lat)))
-            
-            vertices.append({
-                "lat": float(ground_lat + lat_offset),
-                "lon": float(ground_lon + lon_offset),
-                "alt": 0.0
-            })
-        
-        return {
-            "apex": apex,
-            "vertices": vertices,
-            "opening_angle": float(opening_angle),
-            "is_active": bool(look_angles["is_visible"])
-        }
