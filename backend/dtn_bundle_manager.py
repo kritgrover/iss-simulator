@@ -876,6 +876,12 @@ class DTNBundleManager:
             # Note: New BAB for next hop will be created in start_transmission() when forwarding begins
             # We don't know the next hop destination here, so we can't create it yet
             
+            # Check if this is the final destination (ISS or the target ground station)
+            is_final_destination = (
+                to_station.upper() == "ISS" or 
+                to_station.upper() == bundle.destination_station.upper()
+            )
+            
             print(f"✅ Bundle {bundle_id[:8]} received at {to_station}, all security checks passed - sending ACK")
             
             ack = {
@@ -884,7 +890,7 @@ class DTNBundleManager:
                 "bundle_id_short": bundle_id[:8],
                 "from_station": to_station,
                 "to_station": from_station,
-                "ack_type": "delivered" if to_station == "ISS" else "custody_accepted",
+                "ack_type": "delivered" if is_final_destination else "custody_accepted",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "checksum": bundle.checksum
             }
@@ -951,7 +957,7 @@ class DTNBundleManager:
         
         # Process based on destination
         if ack_data.get("ack_type") == "delivered":
-            # Delivered to ISS!
+            # Delivered to final destination (ISS or target ground station)
             bundle.status = BundleStatus.DELIVERED
             bundle.delivered_at = datetime.now(timezone.utc)
             bundle.hops.append(from_station)

@@ -289,12 +289,18 @@ class NetworkDTNManager(DTNBundleManager):
         # Capture sender (current custodian) before process_ack updates it
         sender_station = bundle.current_custodian
         
+        # Check if this is the final destination (ISS or the target ground station)
+        is_final_destination = (
+            node_id.lower() == 'iss' or 
+            node_id.lower() == bundle.destination_station.lower()
+        )
+        
         ack_data = {
             'type': 'ack',
             'bundle_id': bundle_id,
             'from_station': node_id,  # Receiver
             'to_station': sender_station,  # Sender
-            'ack_type': 'delivered' if node_id.lower() == 'iss' else 'custody_accepted',
+            'ack_type': 'delivered' if is_final_destination else 'custody_accepted',
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'checksum': message.get('checksum')
         }
@@ -406,12 +412,17 @@ class NetworkDTNManager(DTNBundleManager):
             # Check for success indicators
             if '✅ ack received' in result_lower or 'ack received' in result_lower:
                 # Bundle was successfully sent and ACK received
+                # Check if this is the final destination (ISS or the target ground station)
+                is_final_destination = (
+                    to_node.lower() == 'iss' or 
+                    to_node.lower() == bundle.destination_station.lower()
+                )
                 ack_data = {
                     'type': 'ack',
                     'bundle_id': bundle_id,
                     'from_station': to_node,
                     'to_station': from_node,
-                    'ack_type': 'custody_accepted' if to_node.lower() != 'iss' else 'delivered',
+                    'ack_type': 'delivered' if is_final_destination else 'custody_accepted',
                     'timestamp': datetime.now(timezone.utc).isoformat(),
                     'checksum': bundle.checksum
                 }
