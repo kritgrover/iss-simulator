@@ -803,6 +803,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             # Get delivered bundles for history
             delivered_bundles = dtn_manager.get_delivered_bundles() 
             
+            # Get broadcast deliveries (each station's receipt of broadcasts)
+            broadcast_deliveries = dtn_manager.get_broadcast_deliveries()
+            
             # Get failed bundles for history
             failed_bundles = dtn_manager.get_failed_bundles()
             
@@ -837,6 +840,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "dtn_queues": dtn_queues,
                 "iss_queue": iss_queue,
                 "delivered_bundles": delivered_bundles,
+                "broadcast_deliveries": broadcast_deliveries,
                 "failed_bundles": failed_bundles,
                 "custody_acks": pending_acks,
                 "active_transmissions": active_transmissions,

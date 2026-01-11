@@ -182,6 +182,8 @@ class DTNBundleManager:
         
         # Broadcast tracking: bundle_id -> set of station_ids that have received it
         self.broadcast_received: Dict[str, set] = {}
+        # Broadcast deliveries for display: track each station's receipt of broadcasts
+        self.broadcast_deliveries: List[Dict] = []
         
         # BSP Security and Fragmentation
         self.bsp_security = BSPSecurityManager()
@@ -998,9 +1000,22 @@ class DTNBundleManager:
             bundle.hops.append(from_station)
             bundle.forwarded_to = None
             
-            # Handle broadcast bundles - mark as received
+            # Handle broadcast bundles - mark as received AND record for display
             if bundle.destination_station.upper() == "BROADCAST":
                 self.mark_broadcast_received(bundle_id, from_station)
+                # Record delivery for this station's interface display
+                self.broadcast_deliveries.append({
+                    "bundle_id": bundle_id,
+                    "bundle_id_short": bundle_id[:8],
+                    "station_id": from_station,
+                    "delivered_at": datetime.now(timezone.utc).isoformat(),
+                    "payload_hash": bundle.payload_hash,
+                    "source": bundle.source_station,
+                    "priority": bundle.priority.value
+                })
+                # Keep only last 50 broadcast deliveries
+                if len(self.broadcast_deliveries) > 50:
+                    self.broadcast_deliveries.pop(0)
             
             # Update DB
             self.db_manager.update_bundle_status(
@@ -1221,6 +1236,10 @@ class DTNBundleManager:
             if bundle_id in self.bundles:
                 bundles.append(self.bundles[bundle_id].to_dict())
         return bundles
+    
+    def get_broadcast_deliveries(self) -> List[Dict]:
+        """Get broadcast deliveries for all stations (most recent first)"""
+        return list(reversed(self.broadcast_deliveries))
     
     def _mark_bundle_failed(self, bundle_id: str, reason: str) -> None:
         """Mark a bundle as failed and track it"""
