@@ -184,6 +184,8 @@ class DTNBundleManager:
         self.broadcast_received: Dict[str, set] = {}
         # Broadcast deliveries for display: track each station's receipt of broadcasts
         self.broadcast_deliveries: List[Dict] = []
+        # Decrypted messages per station: station_id -> list of decrypted messages
+        self.station_decrypted_messages: Dict[str, List[Dict]] = {sid: [] for sid in self.stations.keys()}
         
         # BSP Security and Fragmentation
         self.bsp_security = BSPSecurityManager()
@@ -988,6 +990,32 @@ class DTNBundleManager:
             if len(self.delivered_bundles) > 10:
                 self.delivered_bundles.pop(0)
             
+            # Auto-decrypt if delivered to a ground station (from ISS)
+            if from_station.upper() != "ISS" and bundle.source_station.upper() == "ISS":
+                # For non-fragmented bundles, decrypt immediately
+                # For fragmented bundles, check if all fragments are delivered
+                should_decrypt = False
+                if not bundle.is_fragmented:
+                    should_decrypt = True
+                else:
+                    fragment_status = self.get_fragment_status_for_station(bundle_id, from_station)
+                    if fragment_status and fragment_status["is_complete"]:
+                        should_decrypt = True
+                
+                if should_decrypt:
+                    decrypted = self.decrypt_bundle_for_station(bundle_id, from_station)
+                    if decrypted:
+                        # Add to station's decrypted messages (avoid duplicates)
+                        if from_station not in self.station_decrypted_messages:
+                            self.station_decrypted_messages[from_station] = []
+                        # Check if already decrypted
+                        if not any(m["bundle_id"] == bundle_id for m in self.station_decrypted_messages[from_station]):
+                            self.station_decrypted_messages[from_station].append(decrypted)
+                            # Keep only last 20 messages per station
+                            if len(self.station_decrypted_messages[from_station]) > 20:
+                                self.station_decrypted_messages[from_station].pop(0)
+                            print(f"🔓 Bundle {bundle_id[:8]} decrypted for {from_station.upper()}")
+            
             print(f"🎯 Bundle {bundle_id[:8]} ACK received - DELIVERED to {from_station}")
             print(f"   Total delivery time: {total_time:.1f}s ({total_time/60:.1f} min)")
             print(f"   Complete path: {' → '.join(bundle.hops)}")
@@ -1240,6 +1268,12 @@ class DTNBundleManager:
     def get_broadcast_deliveries(self) -> List[Dict]:
         """Get broadcast deliveries for all stations (most recent first)"""
         return list(reversed(self.broadcast_deliveries))
+    
+    def get_station_decrypted_messages(self, station_id: Optional[str] = None) -> Dict[str, List[Dict]]:
+        """Get decrypted messages for station(s). If station_id provided, returns only that station's messages."""
+        if station_id:
+            return {station_id: self.station_decrypted_messages.get(station_id, [])}
+        return self.station_decrypted_messages.copy()
     
     def _mark_bundle_failed(self, bundle_id: str, reason: str) -> None:
         """Mark a bundle as failed and track it"""
@@ -1502,6 +1536,126 @@ class DTNBundleManager:
         except Exception as e:
             print(f"❌ Error decrypting bundle {parent_id[:8]}: {e}")
             return None
+    
+    def decrypt_bundle_for_station(self, bundle_id: str, station_id: str) -> Optional[Dict]:
+        """
+        Reassemble fragments and decrypt message for a ground station
+        Returns dict with decrypted payload or None if incomplete
+        """
+        # Get parent bundle ID
+        if "-frag-" in bundle_id:
+            parent_id = bundle_id.split("-frag-")[0]
+        else:
+            parent_id = bundle_id
+        
+        # Check if bundle exists and is delivered to this station
+        if parent_id not in self.bundles:
+            return None
+        
+        bundle = self.bundles[parent_id]
+        if bundle.destination_station.upper() != station_id.upper():
+            return None
+        
+        # Check fragment status for this destination
+        fragment_status = self.get_fragment_status_for_station(parent_id, station_id)
+        if not fragment_status or not fragment_status["is_complete"]:
+            return None
+        
+        # Collect all fragment bundles
+        fragment_bundles = []
+        for bid, b in self.bundles.items():
+            if b.destination_station.upper() == station_id.upper() and b.status == BundleStatus.DELIVERED:
+                if b.is_fragmented:
+                    frag_parent = bid.split("-frag-")[0] if "-frag-" in bid else bid
+                    if frag_parent == parent_id:
+                        fragment_bundles.append((b.fragment_number, b))
+                elif not b.is_fragmented and bid == parent_id:
+                    fragment_bundles.append((0, b))
+        
+        if not fragment_bundles:
+            return None
+        
+        # Sort by fragment number
+        fragment_bundles.sort(key=lambda x: x[0])
+        
+        # Reassemble encrypted payload
+        encrypted_payload_parts = []
+        source_station = None
+        pcb = None
+        
+        for frag_num, b in fragment_bundles:
+            encrypted_payload_parts.append(b.encrypted_payload)
+            if source_station is None:
+                source_station = b.source_station
+                pcb = b.pcb
+        
+        reassembled_encrypted = ''.join(encrypted_payload_parts)
+        
+        # Decrypt
+        if not pcb or not source_station:
+            return None
+        
+        try:
+            decrypted_payload = self.bsp_security.decrypt_payload(reassembled_encrypted, pcb, source_station)
+            
+            return {
+                "bundle_id": parent_id,
+                "decrypted_payload": decrypted_payload,
+                "source_station": source_station,
+                "destination_station": station_id,
+                "reassembled_at": datetime.now(timezone.utc).isoformat(),
+                "fragments_count": len(fragment_bundles)
+            }
+        except Exception as e:
+            print(f"❌ Error decrypting bundle {parent_id[:8]} for {station_id}: {e}")
+            return None
+    
+    def get_fragment_status_for_station(self, bundle_id: str, station_id: str) -> Optional[Dict]:
+        """Get fragment status for a bundle delivered to a specific station"""
+        # Check if this is a fragment ID or parent ID
+        if "-frag-" in bundle_id:
+            parent_id = bundle_id.split("-frag-")[0]
+        else:
+            parent_id = bundle_id
+        
+        # Find all fragments for this parent delivered to this station
+        fragments = []
+        fragment_count = 0
+        
+        for bid, bundle in self.bundles.items():
+            if bundle.destination_station.upper() == station_id.upper():
+                if bundle.is_fragmented:
+                    frag_parent = bid.split("-frag-")[0] if "-frag-" in bid else bid
+                    if frag_parent == parent_id:
+                        fragment_count = max(fragment_count, bundle.fragment_count)
+                        fragments.append({
+                            "fragment_number": bundle.fragment_number,
+                            "fragment_id": bid,
+                            "status": "DELIVERED" if bundle.status == BundleStatus.DELIVERED else "PENDING",
+                            "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None
+                        })
+                elif not bundle.is_fragmented and bid == parent_id:
+                    fragments.append({
+                        "fragment_number": 0,
+                        "fragment_id": bid,
+                        "status": "DELIVERED" if bundle.status == BundleStatus.DELIVERED else "PENDING",
+                        "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None
+                    })
+                    fragment_count = 1
+        
+        if not fragments:
+            return None
+        
+        fragments.sort(key=lambda f: f["fragment_number"])
+        is_complete = len([f for f in fragments if f["status"] == "DELIVERED"]) == fragment_count
+        
+        return {
+            "bundle_id": parent_id,
+            "fragments": fragments,
+            "fragments_received": len([f for f in fragments if f["status"] == "DELIVERED"]),
+            "fragments_total": fragment_count,
+            "is_complete": is_complete
+        }
     
     def create_iss_reply_bundle(self, destination_station: str, payload: str, 
                                priority: str = "NORMAL", ttl_hours: int = 24) -> DTNBundle:

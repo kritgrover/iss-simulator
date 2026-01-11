@@ -215,6 +215,7 @@ const Index = () => {
                 linkStatus={selectedStationData?.is_visible ? orbitalData?.link_status : null}
                 dtnQueues={orbitalData?.dtn_queues as Record<string, DTNBundle[]> ?? {}}
                 custodyAcks={orbitalData?.custody_acks ?? []}
+                stationDecryptedMessages={orbitalData?.station_decrypted_messages ?? {}}
               />
 
               <TransmissionHistory 
