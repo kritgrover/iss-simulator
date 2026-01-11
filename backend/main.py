@@ -387,21 +387,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 if not queue:
                     continue  # No bundles to process
                 
-                # Check if this station is already transmitting or waiting for ACK
-                is_transmitting = any(
-                    t.from_station == station_id 
-                    for t in dtn_manager.active_transmissions.values()
-                )
-                
-                # Also check if station is waiting for ACK on any bundle
-                is_waiting_ack = any(
-                    pending.from_station == station_id
-                    for pending in dtn_manager.pending_acknowledgments.values()
-                )
-                
-                if is_transmitting or is_waiting_ack:
-                    continue  # Already transmitting or waiting for ACK, don't start another
-                
                 # Queue is now pre-sorted by priority in dtn_bundle_manager
                 # Skip bundles that are waiting for ACK or already delivered/expired
                 next_bundle_id = None
@@ -418,6 +403,24 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 
                 # Check bundle destination first
                 bundle_destination = next_bundle.destination_station
+                
+                # Check if this station is already transmitting or waiting for ACK
+                # Skip this check for broadcast bundles (they can have multiple simultaneous transmissions)
+                is_broadcast = bundle_destination.upper() == "BROADCAST"
+                if not is_broadcast:
+                    is_transmitting = any(
+                        t.from_station == station_id 
+                        for t in dtn_manager.active_transmissions.values()
+                    )
+                    
+                    # Also check if station is waiting for ACK on any bundle
+                    is_waiting_ack = any(
+                        pending.from_station == station_id
+                        for pending in dtn_manager.pending_acknowledgments.values()
+                    )
+                    
+                    if is_transmitting or is_waiting_ack:
+                        continue  # Already transmitting or waiting for ACK, don't start another
                 
                 # Case 1: Bundle destination is ISS and this station can see ISS - transmit directly
                 if bundle_destination.upper() == "ISS" and is_visible:
@@ -474,18 +477,32 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     unreceived_neighbors = dtn_manager.get_broadcast_unreceived_neighbors(next_bundle_id, station_id)
                     
                     if unreceived_neighbors:
-                        # Forward to first unreceived neighbor (we'll process others in next iterations)
-                        next_neighbor = unreceived_neighbors[0]
-                        print(f"📡 {station_id.upper()} flooding BROADCAST bundle {next_bundle_id[:8]} to {next_neighbor.upper()} ({len(unreceived_neighbors)} neighbors remaining)")
-                        
+                        # Flood to ALL unreceived neighbors simultaneously
                         ground_link_bps = 100_000_000
-                        dtn_manager.start_transmission(
-                            next_bundle_id,
-                            station_id,
-                            next_neighbor,
-                            ground_link_bps,
-                            retransmission_count=0
-                        )
+                        transmissions_started = 0
+                        
+                        for neighbor in unreceived_neighbors:
+                            # Check if we're already transmitting this bundle to this neighbor
+                            already_transmitting = any(
+                                t.bundle_id == next_bundle_id and 
+                                t.from_station == station_id and 
+                                t.to_station == neighbor
+                                for t in dtn_manager.active_transmissions.values()
+                            )
+                            
+                            if not already_transmitting:
+                                transmission = dtn_manager.start_transmission(
+                                    next_bundle_id,
+                                    station_id,
+                                    neighbor,
+                                    ground_link_bps,
+                                    retransmission_count=0
+                                )
+                                if transmission:
+                                    transmissions_started += 1
+                        
+                        if transmissions_started > 0:
+                            print(f"📡 {station_id.upper()} flooding BROADCAST bundle {next_bundle_id[:8]} to {transmissions_started} neighbor(s): {', '.join([n.upper() for n in unreceived_neighbors[:transmissions_started]])}")
                         continue
                     else:
                         # All neighbors have received it - remove from this station's queue

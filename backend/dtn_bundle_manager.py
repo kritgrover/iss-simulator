@@ -665,9 +665,14 @@ class DTNBundleManager:
         
         bundle = self.bundles[bundle_id]
         
-        # Check if already transmitting
-        if bundle_id in self.active_transmissions:
-            return self.active_transmissions[bundle_id]
+        # For broadcast bundles, use composite key (bundle_id:to_station) to allow multiple simultaneous transmissions
+        # For regular bundles, use bundle_id only
+        is_broadcast = bundle.destination_station.upper() == "BROADCAST"
+        transmission_key = f"{bundle_id}:{to_station}" if is_broadcast else bundle_id
+        
+        # Check if already transmitting this bundle to this destination
+        if transmission_key in self.active_transmissions:
+            return self.active_transmissions[transmission_key]
         
         # Prevent forwarding loops
         if to_station in bundle.hops:
@@ -711,7 +716,7 @@ class DTNBundleManager:
         
         # Mark bundle as transmitting
         bundle.status = BundleStatus.TRANSMITTING
-        self.active_transmissions[bundle_id] = transmission
+        self.active_transmissions[transmission_key] = transmission
         
         # Update DB
         bundle_dict = bundle.to_dict()
@@ -742,7 +747,10 @@ class DTNBundleManager:
         """
         completed = []
         
-        for bundle_id, transmission in list(self.active_transmissions.items()):
+        for transmission_key, transmission in list(self.active_transmissions.items()):
+            # Extract bundle_id from key (handles both bundle_id and bundle_id:to_station formats)
+            bundle_id = transmission_key.split(':')[0]
+            
             # Check if contact is maintained
             from_station = transmission.from_station
             is_contact_maintained = station_contact_states.get(from_station, False)
@@ -771,7 +779,7 @@ class DTNBundleManager:
                     bundle.status = BundleStatus.EXPIRED
                     self._mark_bundle_failed(bundle_id, "contact_lost_max_retries")
                 
-                del self.active_transmissions[bundle_id]
+                del self.active_transmissions[transmission_key]
                 continue
             
             # update bytes transmitted
@@ -791,7 +799,7 @@ class DTNBundleManager:
                 print(f"   Actual Duration: {elapsed:.2f}s")
                 print(f"   Average Rate: {(transmission.size_bytes * 8 / elapsed / 1000):.1f} kbps")
                 
-                del self.active_transmissions[bundle_id]
+                del self.active_transmissions[transmission_key]
         
         return completed
     
@@ -807,8 +815,14 @@ class DTNBundleManager:
         
         # Get transmission info from active transmission record (most reliable)
         # This tells us who sent it and where it's going
-        if bundle_id in self.active_transmissions:
-            transmission = self.active_transmissions[bundle_id]
+        # Check both bundle_id and composite keys (for broadcast)
+        transmission = None
+        for key in [bundle_id, f"{bundle_id}:{bundle.destination_station}"]:
+            if key in self.active_transmissions:
+                transmission = self.active_transmissions[key]
+                break
+        
+        if transmission:
             from_station = transmission.from_station  # Actual sender
             to_station = transmission.to_station  # Actual receiver
             bundle.forwarded_to = to_station
