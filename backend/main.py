@@ -545,8 +545,14 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             retransmission_count=retry_count
                         )
                         continue  # Don't check for other forwarding options
+                    else:
+                        # Route exists but next hop is invalid (stale route) - clear it for recalculation
+                        if next_bundle.route and len(next_bundle.route) > 0:
+                            print(f"⚠️  Route for bundle {next_bundle_id[:8]} is stale (next hop already visited or invalid), recalculating...")
+                            next_bundle.route = []
+                            dtn_manager.db_manager.update_bundle_route(next_bundle_id, [])
                     
-                    # No route exists - calculate one if we have mesh connections
+                    # No route exists or route was cleared - calculate one if we have mesh connections
                     if not next_bundle.route or len(next_bundle.route) == 0:
                         final_destination = bundle_destination if bundle_destination.upper() != "ISS" else "ISS"
                         route = dtn_manager.find_route(
