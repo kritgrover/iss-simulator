@@ -77,13 +77,35 @@ def handle_bundle(node_id: str, message: dict, client_socket: socket.socket):
     
     bundle_id = bundle_data.get('bundle_id', 'unknown')
     payload = bundle_data.get('payload', '')
+    # Prefer encrypted_payload field if available
+    encrypted_payload = bundle_data.get('encrypted_payload', payload)
     expected_checksum = bundle_data.get('checksum', 0)
     destination = bundle_data.get('destination_station', 'iss')
+    source = bundle_data.get('source_station', 'unknown')
+    priority = bundle_data.get('priority', 'NORMAL')
+    
+    # Security blocks
+    pcb = bundle_data.get('pcb')
+    pib = bundle_data.get('pib')
+    bab = bundle_data.get('bab')
+    payload_hash = bundle_data.get('payload_hash')
     
     print("📦 Received bundle {} at {}".format(bundle_id[:8], node_id))
+    print("   Source: {}, Destination: {}, Priority: {}".format(source, destination, priority))
     
-    # Verify checksum
-    calculated_checksum = calculate_checksum(payload)
+    # Log security block presence
+    security_info = []
+    if pcb:
+        security_info.append("PCB")
+    if pib:
+        security_info.append("PIB")
+    if bab:
+        security_info.append("BAB")
+    if security_info:
+        print("   🔐 Security blocks: {}".format(", ".join(security_info)))
+    
+    # Verify checksum (on encrypted payload)
+    calculated_checksum = calculate_checksum(encrypted_payload)
     
     if calculated_checksum != expected_checksum:
         # Checksum mismatch - send NAK
@@ -110,11 +132,22 @@ def handle_bundle(node_id: str, message: dict, client_socket: socket.socket):
     send_message(client_socket, ack_message)
     
     # If this is the final destination, bundle is delivered
-    if node_id == destination or (node_id == 'iss' and destination == 'iss'):
-        print("🎯 Bundle {} delivered to {}".format(bundle_id[:8], node_id))
+    # BROADCAST bundles are delivered to every receiving station
+    is_broadcast = destination.upper() == 'BROADCAST'
+    is_final_destination = (
+        node_id == destination or 
+        is_broadcast or
+        (node_id == 'iss' and destination.lower() == 'iss')
+    )
+    
+    if is_final_destination:
+        if is_broadcast:
+            print("📡 BROADCAST bundle {} delivered to {} (will flood to neighbors)".format(bundle_id[:8], node_id))
+        else:
+            print("🎯 Bundle {} delivered to {}".format(bundle_id[:8], node_id))
     else:
-        print("📨 Bundle {} received at {} (forwarding needed)".format(
-            bundle_id[:8], node_id
+        print("📨 Bundle {} received at {} (forwarding needed to {})".format(
+            bundle_id[:8], node_id, destination
         ))
 
 

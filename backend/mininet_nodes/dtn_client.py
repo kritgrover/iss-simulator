@@ -65,7 +65,9 @@ def receive_message(sock: socket.socket) -> dict:
 
 
 def send_bundle(dest_ip: str, dest_port: int, bundle_id: str, source_station: str,
-                destination_station: str, payload: str, priority: str = "NORMAL") -> bool:
+                destination_station: str, payload: str, priority: str = "NORMAL",
+                pcb: dict = None, pib: dict = None, bab: dict = None,
+                payload_hash: str = None) -> bool:
     """
     Send a bundle to destination
     
@@ -75,8 +77,12 @@ def send_bundle(dest_ip: str, dest_port: int, bundle_id: str, source_station: st
         bundle_id: Bundle ID
         source_station: Source station ID
         destination_station: Destination station ID
-        payload: Bundle payload
+        payload: Bundle payload (encrypted)
         priority: Bundle priority
+        pcb: Payload Confidentiality Block (optional)
+        pib: Payload Integrity Block (optional)
+        bab: Bundle Authentication Block (optional)
+        payload_hash: Hash of the payload for integrity verification
         
     Returns:
         True if ACK received, False if NAK or error
@@ -96,9 +102,14 @@ def send_bundle(dest_ip: str, dest_port: int, bundle_id: str, source_station: st
                 'source_station': source_station,
                 'destination_station': destination_station,
                 'payload': payload,
+                'encrypted_payload': payload,  # Explicit field for encrypted payload
+                'payload_hash': payload_hash,
                 'priority': priority,
                 'checksum': checksum,
-                'size_bytes': len(payload.encode('utf-8')) + 200  # payload + header overhead
+                'size_bytes': len(payload.encode('utf-8')) + 200,  # payload + header overhead
+                'pcb': pcb,  # Payload Confidentiality Block
+                'pib': pib,  # Payload Integrity Block
+                'bab': bab   # Bundle Authentication Block
             }
         }
         
@@ -149,8 +160,8 @@ def send_bundle(dest_ip: str, dest_port: int, bundle_id: str, source_station: st
 
 def main():
     """CLI interface for sending bundles"""
-    if len(sys.argv) < 5:
-        print("Usage: {} <dest_ip> <bundle_id> <source_station> <destination_station> <payload> [priority]".format(
+    if len(sys.argv) < 6:
+        print("Usage: {} <dest_ip> <bundle_id> <source_station> <destination_station> <payload> [priority] [pcb_json] [pib_json] [bab_json] [payload_hash]".format(
             sys.argv[0]
         ))
         print("Example: {} 10.0.0.1 abc123 toronto iss 'Hello from Toronto' NORMAL".format(
@@ -165,9 +176,37 @@ def main():
     payload = sys.argv[5]
     priority = sys.argv[6] if len(sys.argv) > 6 else "NORMAL"
     
+    # Parse optional security blocks (JSON encoded)
+    pcb = None
+    pib = None
+    bab = None
+    payload_hash = None
+    
+    if len(sys.argv) > 7 and sys.argv[7] != "null":
+        try:
+            pcb = json.loads(sys.argv[7])
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    if len(sys.argv) > 8 and sys.argv[8] != "null":
+        try:
+            pib = json.loads(sys.argv[8])
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    if len(sys.argv) > 9 and sys.argv[9] != "null":
+        try:
+            bab = json.loads(sys.argv[9])
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    if len(sys.argv) > 10 and sys.argv[10] != "null":
+        payload_hash = sys.argv[10]
+    
     success = send_bundle(
         dest_ip, DTN_PORT, bundle_id, source_station,
-        destination_station, payload, priority
+        destination_station, payload, priority,
+        pcb=pcb, pib=pib, bab=bab, payload_hash=payload_hash
     )
     
     sys.exit(0 if success else 1)

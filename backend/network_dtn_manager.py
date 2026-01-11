@@ -389,15 +389,33 @@ class NetworkDTNManager(DTNBundleManager):
         # Use encrypted_payload (bundles are now always encrypted)
         payload_escaped = shlex.quote(bundle.encrypted_payload)
         
+        # Prepare security blocks as JSON strings
+        pcb_json = "null"
+        pib_json = "null"
+        bab_json = "null"
+        payload_hash = bundle.payload_hash if hasattr(bundle, 'payload_hash') else "null"
+        
+        if bundle.pcb:
+            pcb_json = shlex.quote(json.dumps(bundle.pcb.to_dict()))
+        if bundle.pib:
+            pib_json = shlex.quote(json.dumps(bundle.pib.to_dict()))
+        if bundle.bab:
+            bab_json = shlex.quote(json.dumps(bundle.bab.to_dict()))
+        
         # Build command to run client script within source node's namespace
-        cmd = 'python3 {} {} {} {} {} {} {}'.format(
+        # Args: dest_ip bundle_id source_station destination_station payload priority pcb pib bab payload_hash
+        cmd = 'python3 {} {} {} {} {} {} {} {} {} {} {}'.format(
             client_script,
             dest_ip,
             bundle_id,
             bundle.source_station,
             bundle.destination_station,
             payload_escaped,
-            bundle.priority.value
+            bundle.priority.value,
+            pcb_json,
+            pib_json,
+            bab_json,
+            shlex.quote(payload_hash) if payload_hash != "null" else "null"
         )
         
         try:
