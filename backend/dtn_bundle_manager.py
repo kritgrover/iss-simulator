@@ -970,7 +970,11 @@ class DTNBundleManager:
                 print(f"   ⚠️  Checksum mismatch in ACK (shouldn't happen)")
         
         # Remove from pending acknowledgments
-        if bundle_id in self.pending_acknowledgments:
+        # For broadcasts, the key is composite
+        composite_key = f"{bundle_id}:{from_station}"
+        if composite_key in self.pending_acknowledgments:
+            del self.pending_acknowledgments[composite_key]
+        elif bundle_id in self.pending_acknowledgments:
             del self.pending_acknowledgments[bundle_id]
         
         # Process based on destination
@@ -1162,12 +1166,16 @@ class DTNBundleManager:
             print(f"⚠️  NAK for {bundle_id[:8]} received but we're not the sender")
             return False
         
-        if bundle_id not in self.pending_acknowledgments:
+        # For broadcasts, the key is composite
+        composite_key = f"{bundle_id}:{from_station}"
+        pending_ack_key = composite_key if composite_key in self.pending_acknowledgments else bundle_id
+        
+        if pending_ack_key not in self.pending_acknowledgments:
             # This can happen when NAK arrives but retry was already handled via direct failure path
             print(f"⚠️  NAK for {bundle_id[:8]} but no pending acknowledgment found - retry already handled")
             return False
         
-        pending_ack = self.pending_acknowledgments[bundle_id]
+        pending_ack = self.pending_acknowledgments[pending_ack_key]
         pending_ack.retransmission_count += 1
         
         # Log NAK with checksum details
@@ -1188,7 +1196,7 @@ class DTNBundleManager:
             self.bundle_retry_counts[bundle_id] = pending_ack.retransmission_count
             
             # Remove from pending, will be retransmitted
-            del self.pending_acknowledgments[bundle_id]
+            del self.pending_acknowledgments[pending_ack_key]
             
             # Reset bundle status and prepare for retransmission
             bundle.status = BundleStatus.QUEUED
@@ -1207,7 +1215,7 @@ class DTNBundleManager:
             # Max retries exceeded
             print(f"❌ Bundle {bundle_id[:8]} FAILED - max retries exceeded (checksum mismatch)")
             print(f"   Total retry attempts: {pending_ack.retransmission_count}")
-            del self.pending_acknowledgments[bundle_id]
+            del self.pending_acknowledgments[pending_ack_key]
             bundle.status = BundleStatus.EXPIRED
             self._mark_bundle_failed(bundle_id, "checksum_mismatch_max_retries")
             # Remove from queue
@@ -1223,9 +1231,12 @@ class DTNBundleManager:
         retransmitted = []
         now = datetime.now(timezone.utc)
         
-        for bundle_id, pending_ack in list(self.pending_acknowledgments.items()):
+        for pending_key, pending_ack in list(self.pending_acknowledgments.items()):
+            # For broadcasts, key is composite "bundle_id:to_station", extract actual bundle_id
+            actual_bundle_id = pending_key.split(':')[0] if ':' in pending_key else pending_key
+            
             if pending_ack.is_timed_out():
-                print(f"⏰ Bundle {bundle_id[:8]} ACK timeout (>{pending_ack.timeout_seconds}s)")
+                print(f"⏰ Bundle {actual_bundle_id[:8]} ACK timeout (>{pending_ack.timeout_seconds}s)")
                 
                 pending_ack.retransmission_count += 1
                 print(f"   Retry attempt: {pending_ack.retransmission_count}/{pending_ack.max_retries}")
@@ -1241,26 +1252,26 @@ class DTNBundleManager:
                     if is_contact_available:
                         # Retransmit - preserve retry count
                         retry_count = pending_ack.retransmission_count
-                        print(f"🔄 Retransmitting bundle {bundle_id[:8]} to {pending_ack.to_station} (attempt {retry_count})")
-                        del self.pending_acknowledgments[bundle_id]
+                        print(f"🔄 Retransmitting bundle {actual_bundle_id[:8]} to {pending_ack.to_station} (attempt {retry_count})")
+                        del self.pending_acknowledgments[pending_key]
                         
                         # Reset bundle status and prepare for retransmission
-                        if bundle_id in self.bundles:
-                            bundle = self.bundles[bundle_id]
+                        if actual_bundle_id in self.bundles:
+                            bundle = self.bundles[actual_bundle_id]
                             bundle.status = BundleStatus.QUEUED
                             bundle.forwarded_to = None
                             
                             # Update DB
                             self.db_manager.update_bundle_status(
-                                bundle_id=bundle_id,
+                                bundle_id=actual_bundle_id,
                                 status=BundleStatus.QUEUED.value,
                                 forwarded_to=None
                             )
                             
                             # Store retry count for when transmission starts
-                            self.bundle_retry_counts[bundle_id] = retry_count
+                            self.bundle_retry_counts[actual_bundle_id] = retry_count
                         
-                        retransmitted.append((bundle_id, retry_count, pending_ack.data_rate_bps))
+                        retransmitted.append((actual_bundle_id, retry_count, pending_ack.data_rate_bps))
                     else:
                         # Contact lost, keep waiting (don't count as retry yet)
                         print(f"   Contact lost, will retry when contact restored")
@@ -1268,16 +1279,16 @@ class DTNBundleManager:
                         pending_ack.transmitted_at = now  # Reset timeout
                 else:
                     # Max retries exceeded
-                    print(f"❌ Bundle {bundle_id[:8]} FAILED - max retries exceeded (ACK timeout)")
+                    print(f"❌ Bundle {actual_bundle_id[:8]} FAILED - max retries exceeded (ACK timeout)")
                     print(f"   Total retry attempts: {pending_ack.retransmission_count}")
-                    del self.pending_acknowledgments[bundle_id]
-                    if bundle_id in self.bundles:
-                        bundle = self.bundles[bundle_id]
+                    del self.pending_acknowledgments[pending_key]
+                    if actual_bundle_id in self.bundles:
+                        bundle = self.bundles[actual_bundle_id]
                         bundle.status = BundleStatus.EXPIRED
-                        self._mark_bundle_failed(bundle_id, "ack_timeout_max_retries")
+                        self._mark_bundle_failed(actual_bundle_id, "ack_timeout_max_retries")
                         # Remove from queue
-                        if bundle_id in self.station_queues[pending_ack.from_station]:
-                            self.station_queues[pending_ack.from_station].remove(bundle_id)
+                        if actual_bundle_id in self.station_queues.get(pending_ack.from_station, []):
+                            self.station_queues[pending_ack.from_station].remove(actual_bundle_id)
         
         return retransmitted
     
