@@ -1063,6 +1063,21 @@ class DTNBundleManager:
                 # Keep only last 50 broadcast deliveries
                 if len(self.broadcast_deliveries) > 50:
                     self.broadcast_deliveries.pop(0)
+                
+                # Auto-decrypt broadcast messages from ISS for ground station display
+                if from_station.upper() != "ISS" and bundle.source_station.upper() == "ISS":
+                    decrypted = self.decrypt_bundle_for_broadcast(bundle_id, from_station)
+                    if decrypted:
+                        # Add to station's decrypted messages (avoid duplicates)
+                        if from_station not in self.station_decrypted_messages:
+                            self.station_decrypted_messages[from_station] = []
+                        # Check if already decrypted for this station
+                        if not any(m["bundle_id"] == bundle_id for m in self.station_decrypted_messages[from_station]):
+                            self.station_decrypted_messages[from_station].append(decrypted)
+                            # Keep only last 20 messages per station
+                            if len(self.station_decrypted_messages[from_station]) > 20:
+                                self.station_decrypted_messages[from_station].pop(0)
+                            print(f"🔓 Broadcast {bundle_id[:8]} decrypted for {from_station.upper()}")
             
             # Update DB
             self.db_manager.update_bundle_status(
@@ -1643,6 +1658,46 @@ class DTNBundleManager:
             }
         except Exception as e:
             print(f"❌ Error decrypting bundle {parent_id[:8]} for {station_id}: {e}")
+            return None
+    
+    def decrypt_bundle_for_broadcast(self, bundle_id: str, station_id: str) -> Optional[Dict]:
+        """
+        Decrypt a broadcast bundle for a ground station.
+        Unlike decrypt_bundle_for_station, this doesn't check destination since broadcasts go to all.
+        Returns dict with decrypted payload or None if decryption fails.
+        """
+        if bundle_id not in self.bundles:
+            return None
+        
+        bundle = self.bundles[bundle_id]
+        
+        # Only decrypt broadcasts
+        if bundle.destination_station.upper() != "BROADCAST":
+            return None
+        
+        # Get encryption info
+        pcb = bundle.pcb
+        source_station = bundle.source_station
+        
+        if not pcb or not source_station:
+            return None
+        
+        try:
+            decrypted_payload = self.bsp_security.decrypt_payload(
+                bundle.encrypted_payload, pcb, source_station
+            )
+            
+            return {
+                "bundle_id": bundle_id,
+                "decrypted_payload": decrypted_payload,
+                "source_station": source_station,
+                "destination_station": "BROADCAST",
+                "receiving_station": station_id,
+                "decrypted_at": datetime.now(timezone.utc).isoformat(),
+                "is_broadcast": True
+            }
+        except Exception as e:
+            print(f"❌ Error decrypting broadcast {bundle_id[:8]} for {station_id}: {e}")
             return None
     
     def get_fragment_status_for_station(self, bundle_id: str, station_id: str) -> Optional[Dict]:

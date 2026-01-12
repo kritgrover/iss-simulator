@@ -258,6 +258,48 @@ class NetworkDTNManager(DTNBundleManager):
                 import hashlib
                 payload_hash = hashlib.sha256(encrypted_payload.encode('utf-8')).hexdigest()
             
+            # Reconstruct security blocks from received data
+            pcb = None
+            pib = None
+            bab = None
+            
+            pcb_data = bundle_data.get('pcb')
+            if pcb_data:
+                from bsp_security import PayloadConfidentialityBlock
+                if isinstance(pcb_data, str):
+                    pcb_data = json.loads(pcb_data)
+                pcb = PayloadConfidentialityBlock(
+                    security_target=pcb_data.get('security_target', 'payload'),
+                    security_source=pcb_data.get('security_source', ''),
+                    encryption_method=pcb_data.get('encryption_method', 'AES-256-CBC'),
+                    key_id=pcb_data.get('key_id', ''),
+                    iv=pcb_data.get('iv', '')
+                )
+            
+            pib_data = bundle_data.get('pib')
+            if pib_data:
+                from bsp_security import PayloadIntegrityBlock
+                if isinstance(pib_data, str):
+                    pib_data = json.loads(pib_data)
+                pib = PayloadIntegrityBlock(
+                    security_target=pib_data.get('security_target', 'payload'),
+                    security_source=pib_data.get('security_source', ''),
+                    signature=pib_data.get('signature', ''),
+                    signer=pib_data.get('signer', '')
+                )
+            
+            bab_data = bundle_data.get('bab')
+            if bab_data:
+                from bsp_security import BundleAuthenticationBlock
+                if isinstance(bab_data, str):
+                    bab_data = json.loads(bab_data)
+                bab = BundleAuthenticationBlock(
+                    security_target=bab_data.get('security_target', ''),
+                    security_source=bab_data.get('security_source', ''),
+                    mac=bab_data.get('mac', ''),
+                    key_id=bab_data.get('key_id', '')
+                )
+            
             bundle = DTNBundle(
                 bundle_id=bundle_id,
                 source_station=source_station,
@@ -268,7 +310,10 @@ class NetworkDTNManager(DTNBundleManager):
                 created_at=datetime.now(timezone.utc),
                 ttl_hours=24,  # Default TTL
                 current_custodian=node_id,  
-                hops=[source_station]  # Start with source station, will be updated when ACK processed
+                hops=[source_station],  # Start with source station, will be updated when ACK processed
+                pcb=pcb,
+                pib=pib,
+                bab=bab
             )
             self.bundles[bundle_id] = bundle
             
