@@ -431,8 +431,8 @@ class DTNBundleManager:
             # stations currently tracking ISS (is_visible = True)
             currently_visible = [
                 sid for sid in self.stations.keys() 
-                if sid != from_station and 
-                sid not in visited and
+                if (sid != from_station or from_station == sid) and # Allow current station
+                (sid not in visited or sid == from_station) and
                 station_lookup.get(sid, {}).get("is_visible", False)
             ]
             
@@ -447,8 +447,8 @@ class DTNBundleManager:
                 # stations with upcoming passes
                 upcoming_pass_stations = [
                     sid for sid in self.stations.keys() 
-                    if sid != from_station and 
-                    sid not in visited and
+                    if (sid != from_station or from_station == sid) and # Allow current station
+                    (sid not in visited or sid == from_station) and
                     station_lookup.get(sid, {}).get("next_pass_minutes", 999999) > 0
                 ]
                 if not upcoming_pass_stations:

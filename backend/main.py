@@ -546,8 +546,17 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         )
                         continue  # Don't check for other forwarding options
                     else:
+                        # Check if we are at the end of the route and destination is ISS (waiting for pass)
+                        # If so, we are at the designated uplink station and should wait here
+                        is_waiting_for_iss = (bundle_destination.upper() == "ISS" and 
+                                              next_bundle.route and 
+                                              next_bundle.route[-1] == station_id)
+                        
+                        if is_waiting_for_iss:
+                            # We are at the uplink station, just waiting for ISS pass
+                            pass
                         # Route exists but next hop is invalid (stale route) - clear it for recalculation
-                        if next_bundle.route and len(next_bundle.route) > 0:
+                        elif next_bundle.route and len(next_bundle.route) > 0:
                             print(f"⚠️  Route for bundle {next_bundle_id[:8]} is stale (next hop already visited or invalid), recalculating...")
                             next_bundle.route = []
                             dtn_manager.db_manager.update_bundle_route(next_bundle_id, [])
