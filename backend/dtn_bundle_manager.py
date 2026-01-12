@@ -1044,7 +1044,8 @@ class DTNBundleManager:
             
             # Handle broadcast bundles - mark as received AND record for display
             if bundle.destination_station.upper() == "BROADCAST":
-                self.mark_broadcast_received(bundle_id, from_station)
+                self.mark_broadcast_received(bundle_id, from_station)  # Receiver
+                self.mark_broadcast_received(bundle_id, to_station)    # Sender
                 # Record delivery for this station's interface display
                 self.broadcast_deliveries.append({
                     "bundle_id": bundle_id,
@@ -1077,14 +1078,23 @@ class DTNBundleManager:
             if to_station.upper() != "ISS":
                 if bundle_id in self.station_queues.get(to_station, []):
                     self.station_queues[to_station].remove(bundle_id)
-            if from_station.upper() != "ISS" and from_station in self.station_queues:
+            
+            # For broadcast bundles, only add to queue if there are unreceived neighbors
+            if bundle.destination_station.upper() == "BROADCAST":
+                unreceived_neighbors = self.get_broadcast_unreceived_neighbors(bundle_id, from_station)
+                if unreceived_neighbors and from_station.upper() != "ISS" and from_station in self.station_queues:
+                    self.station_queues[from_station].append(bundle_id)
+                    self._sort_station_queue(from_station)
+                    print(f"📡 Bundle {bundle_id[:8]} ACK received - BROADCAST received at {from_station.upper()}, will flood to {len(unreceived_neighbors)} neighbor(s)")
+                else:
+                    # No unreceived neighbors - this station is the end of the line for this broadcast
+                    print(f"📡 Bundle {bundle_id[:8]} ACK received - BROADCAST received at {from_station.upper()} (no more neighbors to flood)")
+            elif from_station.upper() != "ISS" and from_station in self.station_queues:
                 self.station_queues[from_station].append(bundle_id)
                 # Sort the destination queue after adding bundle
                 self._sort_station_queue(from_station)
             
-            if bundle.destination_station.upper() == "BROADCAST":
-                print(f"📡 Bundle {bundle_id[:8]} ACK received - BROADCAST received at {from_station.upper()}, will flood to neighbors")
-            else:
+            if bundle.destination_station.upper() != "BROADCAST":
                 print(f"📨 Bundle {bundle_id[:8]} ACK received - custody transferred to {from_station.upper()}")
                 print(f"   Path so far: {' → '.join(bundle.hops)}")
             
