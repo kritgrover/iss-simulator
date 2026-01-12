@@ -33,6 +33,7 @@ interface MessageExchangeProps {
     destination_station: string;
     reassembled_at: string;
     fragments_count: number;
+    is_broadcast?: boolean;
   }>>;
 }
 
@@ -238,10 +239,19 @@ const MessageExchange = ({
       if (!displayedBundleIds.current.has(msg.bundle_id)) {
         displayedBundleIds.current.add(msg.bundle_id);
         
-        const stationName = activeStationId.charAt(0).toUpperCase() + activeStationId.slice(1);
+        // Determine message prefix based on message type
+        let messageText = "";
+        if (msg.is_broadcast === true || msg.destination_station === "BROADCAST") {
+          // Broadcast message
+          messageText = `BROADCAST Message Received: ${msg.decrypted_payload}`;
+        } else {
+          // Specific station message
+          messageText = `Message Received from ISS: ${msg.decrypted_payload}`;
+        }
+        
         const newMessage: Message = {
           id: messageIdCounter.current++,
-          text: `Message from ISS to ${stationName}: ${msg.decrypted_payload}`,
+          text: messageText,
           success: true,
           time: new Date(msg.reassembled_at).toLocaleTimeString('en-US', { hour12: false }),
           station: activeStationId,

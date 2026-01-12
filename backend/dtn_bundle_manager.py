@@ -1064,20 +1064,30 @@ class DTNBundleManager:
                 if len(self.broadcast_deliveries) > 50:
                     self.broadcast_deliveries.pop(0)
                 
-                # Auto-decrypt broadcast messages from ISS for ground station display
+                # Auto-decrypt broadcast messages from ISS ONLY when ALL stations have received it
                 if from_station.upper() != "ISS" and bundle.source_station.upper() == "ISS":
-                    decrypted = self.decrypt_bundle_for_broadcast(bundle_id, from_station)
-                    if decrypted:
-                        # Add to station's decrypted messages (avoid duplicates)
-                        if from_station not in self.station_decrypted_messages:
-                            self.station_decrypted_messages[from_station] = []
-                        # Check if already decrypted for this station
-                        if not any(m["bundle_id"] == bundle_id for m in self.station_decrypted_messages[from_station]):
-                            self.station_decrypted_messages[from_station].append(decrypted)
-                            # Keep only last 20 messages per station
-                            if len(self.station_decrypted_messages[from_station]) > 20:
-                                self.station_decrypted_messages[from_station].pop(0)
-                            print(f"🔓 Broadcast {bundle_id[:8]} decrypted for {from_station.upper()}")
+                    # Check if all stations have received this broadcast
+                    if self.check_all_stations_received_broadcast(bundle_id):
+                        # Decrypt for ALL stations that have received it
+                        for station_id in self.broadcast_received[bundle_id]:
+                            if station_id.upper() != "ISS":  # Don't decrypt for ISS
+                                # Check if already decrypted for this station
+                                if station_id in self.station_decrypted_messages:
+                                    if not any(m["bundle_id"] == bundle_id for m in self.station_decrypted_messages[station_id]):
+                                        decrypted = self.decrypt_bundle_for_broadcast(bundle_id, station_id)
+                                        if decrypted:
+                                            self.station_decrypted_messages[station_id].append(decrypted)
+                                            # Keep only last 20 messages per station
+                                            if len(self.station_decrypted_messages[station_id]) > 20:
+                                                self.station_decrypted_messages[station_id].pop(0)
+                                else:
+                                    # Initialize if not exists
+                                    self.station_decrypted_messages[station_id] = []
+                                    decrypted = self.decrypt_bundle_for_broadcast(bundle_id, station_id)
+                                    if decrypted:
+                                        self.station_decrypted_messages[station_id].append(decrypted)
+                        
+                        print(f"🔓 BROADCAST {bundle_id[:8]} decrypted for ALL stations (all stations have received it)")
             
             # Update DB
             self.db_manager.update_bundle_status(
@@ -1654,7 +1664,8 @@ class DTNBundleManager:
                 "source_station": source_station,
                 "destination_station": station_id,
                 "reassembled_at": datetime.now(timezone.utc).isoformat(),
-                "fragments_count": len(fragment_bundles)
+                "fragments_count": len(fragment_bundles),
+                "is_broadcast": False  # Specific station message
             }
         except Exception as e:
             print(f"❌ Error decrypting bundle {parent_id[:8]} for {station_id}: {e}")
@@ -1693,8 +1704,8 @@ class DTNBundleManager:
                 "source_station": source_station,
                 "destination_station": "BROADCAST",
                 "receiving_station": station_id,
-                "decrypted_at": datetime.now(timezone.utc).isoformat(),
-                "is_broadcast": True
+                "reassembled_at": datetime.now(timezone.utc).isoformat(),  # Changed from decrypted_at to match other format
+                "is_broadcast": True  # Mark as broadcast message
             }
         except Exception as e:
             print(f"❌ Error decrypting broadcast {bundle_id[:8]} for {station_id}: {e}")
@@ -1836,3 +1847,20 @@ class DTNBundleManager:
     def has_received_broadcast(self, bundle_id: str, station_id: str) -> bool:
         """Check if a station has already received a broadcast bundle"""
         return bundle_id in self.broadcast_received and station_id in self.broadcast_received[bundle_id]
+    
+    def check_all_stations_received_broadcast(self, bundle_id: str) -> bool:
+        """
+        Check if all ground stations have received a broadcast bundle.
+        Returns True if all stations have received it, False otherwise.
+        """
+        if bundle_id not in self.broadcast_received:
+            return False
+        
+        # Get all ground station IDs (exclude ISS)
+        all_ground_stations = set(self.stations.keys())
+        
+        # Get stations that have received this broadcast
+        received_stations = self.broadcast_received[bundle_id]
+        
+        # Check if all ground stations have received it
+        return all_ground_stations.issubset(received_stations)
