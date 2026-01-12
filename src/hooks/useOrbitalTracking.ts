@@ -125,6 +125,7 @@ export interface OrbitalData {
     destination_station: string;
     reassembled_at: string;
     fragments_count: number;
+    is_broadcast?: boolean;
   }>>;
   active_transmissions: ActiveTransmission[];
   mesh_connections?: Array<{

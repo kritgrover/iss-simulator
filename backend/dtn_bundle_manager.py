@@ -1608,22 +1608,40 @@ class DTNBundleManager:
         else:
             parent_id = bundle_id
         
-        # Check if bundle exists and is delivered to this station
-        if parent_id not in self.bundles:
+        # Try to get the bundle - either parent or find a fragment for metadata
+        bundle = None
+        is_fragmented = False
+        
+        if parent_id in self.bundles:
+            # Non-fragmented bundle exists with parent ID
+            bundle = self.bundles[parent_id]
+            is_fragmented = bundle.is_fragmented
+        else:
+            # For fragmented bundles, parent ID doesn't exist - find a fragment
+            # Look for any fragment that matches this parent ID and destination
+            for bid, b in self.bundles.items():
+                if "-frag-" in bid:
+                    frag_parent = bid.split("-frag-")[0]
+                    if frag_parent == parent_id and b.destination_station.upper() == station_id.upper():
+                        bundle = b
+                        is_fragmented = True
+                        break
+        
+        if not bundle:
             return None
         
-        bundle = self.bundles[parent_id]
+        # Check destination matches
         if bundle.destination_station.upper() != station_id.upper():
             return None
         
-        # Check if bundle is delivered
-        if bundle.status != BundleStatus.DELIVERED:
-            return None
-        
         # For fragmented bundles, check if all fragments are complete
-        if bundle.is_fragmented:
+        if is_fragmented:
             fragment_status = self.get_fragment_status_for_station(parent_id, station_id)
             if not fragment_status or not fragment_status["is_complete"]:
+                return None
+        else:
+            # For non-fragmented, check if bundle is delivered
+            if bundle.status != BundleStatus.DELIVERED:
                 return None
         
         # Collect all fragment bundles
