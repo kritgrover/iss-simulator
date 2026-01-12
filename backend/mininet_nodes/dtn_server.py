@@ -135,9 +135,9 @@ def handle_bundle(node_id: str, message: dict, client_socket: socket.socket):
     # BROADCAST bundles are delivered to every receiving station
     is_broadcast = destination.upper() == 'BROADCAST'
     is_final_destination = (
-        node_id == destination or 
+        node_id.lower() == destination.lower() or 
         is_broadcast or
-        (node_id == 'iss' and destination.lower() == 'iss')
+        (node_id.lower() == 'iss' and destination.lower() == 'iss')
     )
     
     if is_final_destination:

@@ -1010,15 +1010,19 @@ class DTNBundleManager:
             
             # Auto-decrypt if delivered to a ground station (from ISS)
             if from_station.upper() != "ISS" and bundle.source_station.upper() == "ISS":
+                print(f"🕵️ Checking auto-decrypt for {bundle_id} at {from_station}")
                 # For non-fragmented bundles, decrypt immediately
                 # For fragmented bundles, check if all fragments are delivered
                 should_decrypt = False
                 if not bundle.is_fragmented:
                     should_decrypt = True
+                    print(f"   Bundle not fragmented, decrypting...")
                 else:
                     fragment_status = self.get_fragment_status_for_station(bundle_id, from_station)
+                    print(f"   Fragment status: {fragment_status}")
                     if fragment_status and fragment_status["is_complete"]:
                         should_decrypt = True
+                        print(f"   All fragments received, decrypting...")
                 
                 if should_decrypt:
                     decrypted = self.decrypt_bundle_for_station(bundle_id, from_station)
@@ -1033,6 +1037,10 @@ class DTNBundleManager:
                             if len(self.station_decrypted_messages[from_station]) > 20:
                                 self.station_decrypted_messages[from_station].pop(0)
                             print(f"🔓 Bundle {bundle_id[:8]} decrypted for {from_station.upper()}")
+                        else:
+                            print(f"   Message already decrypted for {from_station}")
+                    else:
+                        print(f"❌ Decryption failed for {bundle_id} at {from_station}")
             
             print(f"🎯 Bundle {bundle_id[:8]} ACK received - DELIVERED to {from_station}")
             print(f"   Total delivery time: {total_time:.1f}s ({total_time/60:.1f} min)")
@@ -1628,20 +1636,24 @@ class DTNBundleManager:
                         break
         
         if not bundle:
+            print(f"⚠️ decrypt_bundle_for_station: Bundle {parent_id} not found")
             return None
         
         # Check destination matches
         if bundle.destination_station.upper() != station_id.upper():
+            print(f"⚠️ decrypt_bundle_for_station: Destination mismatch {bundle.destination_station} != {station_id}")
             return None
         
         # For fragmented bundles, check if all fragments are complete
         if is_fragmented:
             fragment_status = self.get_fragment_status_for_station(parent_id, station_id)
             if not fragment_status or not fragment_status["is_complete"]:
+                print(f"⚠️ decrypt_bundle_for_station: Fragments incomplete for {parent_id}")
                 return None
         else:
             # For non-fragmented, check if bundle is delivered
             if bundle.status != BundleStatus.DELIVERED:
+                print(f"⚠️ decrypt_bundle_for_station: Bundle {parent_id} not delivered (status: {bundle.status})")
                 return None
         
         # Collect all fragment bundles
