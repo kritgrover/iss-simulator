@@ -1616,10 +1616,15 @@ class DTNBundleManager:
         if bundle.destination_station.upper() != station_id.upper():
             return None
         
-        # Check fragment status for this destination
-        fragment_status = self.get_fragment_status_for_station(parent_id, station_id)
-        if not fragment_status or not fragment_status["is_complete"]:
+        # Check if bundle is delivered
+        if bundle.status != BundleStatus.DELIVERED:
             return None
+        
+        # For fragmented bundles, check if all fragments are complete
+        if bundle.is_fragmented:
+            fragment_status = self.get_fragment_status_for_station(parent_id, station_id)
+            if not fragment_status or not fragment_status["is_complete"]:
+                return None
         
         # Collect all fragment bundles
         fragment_bundles = []
