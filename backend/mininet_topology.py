@@ -70,8 +70,7 @@ class ISSTopology:
         Calculate partial mesh topology - each station connects to 3 nearest neighbors
         Returns list of (station1_id, station2_id) tuples
         """
-        connections = []
-        station_ids = [s["id"] for s in self.ground_stations]
+        connections = set()  # Use set to automatically prevent duplicates
         
         for i, station1 in enumerate(self.ground_stations):
             # Calculate distances to all other stations
@@ -87,16 +86,15 @@ class ISSTopology:
             # Sort by distance and connect to 3 nearest
             distances.sort(key=lambda x: x[0])
             for dist, station2_id in distances[:3]:
-                # Avoid duplicate connections (only add if station1 < station2)
+                # Always store with smaller ID first to ensure consistency and prevent duplicates
                 if station1["id"] < station2_id:
-                    connections.append((station1["id"], station2_id))
-                elif station2_id < station1["id"]:
-                    # Check if reverse connection already exists
-                    if (station2_id, station1["id"]) not in connections:
-                        connections.append((station1["id"], station2_id))
+                    connections.add((station1["id"], station2_id))
+                else:
+                    connections.add((station2_id, station1["id"]))
         
-        info("📡 Mesh topology: {} ground station connections\n".format(len(connections)))
-        return connections
+        connections_list = list(connections)
+        info("📡 Mesh topology: {} ground station connections\n".format(len(connections_list)))
+        return connections_list
     
     def build(self):
         """Build the Mininet topology"""

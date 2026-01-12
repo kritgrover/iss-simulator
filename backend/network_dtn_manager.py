@@ -572,6 +572,10 @@ class NetworkDTNManager(DTNBundleManager):
         if transmission:
             bundle = self.bundles.get(bundle_id)
             if bundle:
+                # Use composite key for broadcasts to allow multiple simultaneous transmissions
+                is_broadcast = bundle.destination_station.upper() == "BROADCAST"
+                status_key = "{}:{}".format(bundle_id, to_station) if is_broadcast else bundle_id
+                
                 from dtn_bundle_manager import PendingAcknowledgment
                 now = datetime.now(timezone.utc)
                 pending_ack = PendingAcknowledgment(
@@ -584,15 +588,24 @@ class NetworkDTNManager(DTNBundleManager):
                     max_retries=self.MAX_RETRIES,
                     data_rate_bps=data_rate_bps
                 )
-                self.pending_acknowledgments[bundle_id] = pending_ack
+                # Use composite key for pending acknowledgments for broadcasts
+                self.pending_acknowledgments[status_key] = pending_ack
                 bundle.status = BundleStatus.WAITING_ACK
+            else:
+                # Fallback if bundle not found
+                bundle = self.bundles.get(bundle_id)
+                is_broadcast = bundle and bundle.destination_station.upper() == "BROADCAST"
+                status_key = "{}:{}".format(bundle_id, to_station) if is_broadcast else bundle_id
             
             # Track network send status
             if not hasattr(self, '_network_send_status'):
                 self._network_send_status = {}  
             
-            # Initialize status as pending
-            self._network_send_status[bundle_id] = {'success': False, 'completed': False, 'failure_reason': None}
+            # Initialize status as pending - use composite key for broadcasts
+            self._network_send_status[status_key] = {'success': False, 'completed': False, 'failure_reason': None}
+            
+            # Capture status_key for closure
+            thread_status_key = status_key
             
             # Send bundle over network in background thread
             def send_thread():
@@ -602,9 +615,9 @@ class NetworkDTNManager(DTNBundleManager):
                 # Send bundle over network
                 success = self.send_bundle_over_network(bundle_id, from_station, to_station)
                 
-                # Update status
-                failure_reason = self._network_send_status.get(bundle_id, {}).get('failure_reason')
-                self._network_send_status[bundle_id] = {
+                # Update status using captured status_key
+                failure_reason = self._network_send_status.get(thread_status_key, {}).get('failure_reason')
+                self._network_send_status[thread_status_key] = {
                     'success': success, 
                     'completed': True,
                     'failure_reason': failure_reason
@@ -627,7 +640,9 @@ class NetworkDTNManager(DTNBundleManager):
         """
         completed = []
         
-        for bundle_id, transmission in list(self.active_transmissions.items()):
+        for transmission_key, transmission in list(self.active_transmissions.items()):
+            # Extract actual bundle_id from transmission object (transmission_key may be composite for broadcasts)
+            bundle_id = transmission.bundle_id
             from_station = transmission.from_station
             is_contact_maintained = station_contact_states.get(from_station, False)
             
@@ -637,13 +652,14 @@ class NetworkDTNManager(DTNBundleManager):
                 print(f"⚠️  Transmission of {bundle_id[:8]} ABORTED after {elapsed:.1f}s (contact lost)")
                 print(f"   Progress: {transmission.progress_percent():.1f}% ({transmission.bytes_transmitted:.0f}/{transmission.size_bytes} bytes)")
                 
-                bundle = self.bundles[bundle_id]
-                bundle.status = BundleStatus.QUEUED  # Back to queue
+                bundle = self.bundles.get(bundle_id)
+                if bundle:
+                    bundle.status = BundleStatus.QUEUED  # Back to queue
                 
                 # Update DB
                 self.db_manager.update_bundle_status(bundle_id=bundle_id, status=BundleStatus.QUEUED.value)
                 
-                del self.active_transmissions[bundle_id]
+                del self.active_transmissions[transmission_key]
                 continue
             
             # Update bytes transmitted (simulated progress)
@@ -657,7 +673,7 @@ class NetworkDTNManager(DTNBundleManager):
             if transmission.is_complete():
                 # Check if network send actually completed successfully
                 if hasattr(self, '_network_send_status'):
-                    status = self._network_send_status.get(bundle_id, {'completed': False, 'success': False, 'failure_reason': None})
+                    status = self._network_send_status.get(transmission_key, {'completed': False, 'success': False, 'failure_reason': None})
                     
                     if status['completed'] and status['success']:
                         elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
@@ -668,11 +684,10 @@ class NetworkDTNManager(DTNBundleManager):
                         print(f"   Average Rate: {(transmission.size_bytes * 8 / elapsed / 1000):.1f} kbps")
                         
                         completed.append((bundle_id, transmission.data_rate_bps))
-                        del self.active_transmissions[bundle_id]
+                        del self.active_transmissions[transmission_key]
                     elif status['completed'] and not status['success']:
                         failure_reason = status.get('failure_reason', 'unknown')
                         bundle = self.bundles.get(bundle_id)
-                        transmission = self.active_transmissions.get(bundle_id)
                         
                         if bundle and transmission:
                             transmission.retransmission_count += 1
@@ -695,11 +710,11 @@ class NetworkDTNManager(DTNBundleManager):
                                 )
                                 
                                 # Remove from active transmissions so it can be picked up again
-                                del self.active_transmissions[bundle_id]
+                                del self.active_transmissions[transmission_key]
                                 
-                                # Remove from pending acknowledgments if present
-                                if bundle_id in self.pending_acknowledgments:
-                                    del self.pending_acknowledgments[bundle_id]
+                                # Remove from pending acknowledgments if present (use transmission_key for broadcasts)
+                                if transmission_key in self.pending_acknowledgments:
+                                    del self.pending_acknowledgments[transmission_key]
                                 
                                 print("⚠️  Bundle {} transmission failed ({}), requeuing for retry (attempt {}/{})".format(
                                     bundle_id[:8], 
@@ -717,11 +732,11 @@ class NetworkDTNManager(DTNBundleManager):
                                 bundle.forwarded_to = None
                                 
                                 # Remove from active transmissions
-                                del self.active_transmissions[bundle_id]
+                                del self.active_transmissions[transmission_key]
                                 
                                 # Remove from pending acknowledgments if present
-                                if bundle_id in self.pending_acknowledgments:
-                                    del self.pending_acknowledgments[bundle_id]
+                                if transmission_key in self.pending_acknowledgments:
+                                    del self.pending_acknowledgments[transmission_key]
                                 
                                 # Mark as failed
                                 self._mark_bundle_failed(bundle_id, f"{failure_reason}_max_retries")
@@ -740,7 +755,7 @@ class NetworkDTNManager(DTNBundleManager):
                     print(f"   Average Rate: {(transmission.size_bytes * 8 / elapsed / 1000):.1f} kbps")
                     
                     completed.append((bundle_id, transmission.data_rate_bps))
-                    del self.active_transmissions[bundle_id]
+                    del self.active_transmissions[transmission_key]
         
         return completed
     
