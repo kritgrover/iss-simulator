@@ -49,9 +49,21 @@ class NetworkDTNManager(DTNBundleManager):
         self.server_threads = {} 
         self.running = False
         self.message_handlers = {} 
-        self.connections = {} 
+        self.connections = {}
+        self._node_locks = {}  # Per-node locks for thread-safe cmd() calls
         
         print("🌐 NetworkDTNManager initialized")
+    
+    def _get_node_lock(self, node_id: str) -> threading.Lock:
+        """Get or create a lock for a specific node to serialize cmd() calls.
+        
+        Mininet's node.cmd() is NOT thread-safe - calling it from multiple threads
+        simultaneously causes AssertionError. This lock ensures only one thread
+        can execute cmd() on a given node at a time.
+        """
+        if node_id not in self._node_locks:
+            self._node_locks[node_id] = threading.Lock()
+        return self._node_locks[node_id]
     
     def start_servers(self):
         """Start TCP servers for all nodes within their Mininet namespaces"""
@@ -419,10 +431,15 @@ class NetworkDTNManager(DTNBundleManager):
         )
         
         try:
-            # Run client script within source node's namespace
-            # This ensures the socket connection uses the node's network namespace
-            # cmd() runs synchronously and captures stdout/stderr
-            result = source_node.cmd(cmd)
+            # Get lock for this source node to prevent concurrent cmd() calls
+            # Mininet's cmd() is NOT thread-safe
+            node_lock = self._get_node_lock(from_node)
+            
+            with node_lock:
+                # Run client script within source node's namespace
+                # This ensures the socket connection uses the node's network namespace
+                # cmd() runs synchronously and captures stdout/stderr
+                result = source_node.cmd(cmd)
             
             # Check result output for success/failure indicators
             result_lower = result.lower()
