@@ -55,7 +55,7 @@ GROUND_STATIONS = [
     {"id": "moscow", "name": "Moscow", "lat": 55.7558, "lon": 37.6173},
 ]
 
-MIN_ELEVATION_FOR_VISIBILITY = -5.0
+MIN_ELEVATION_FOR_VISIBILITY = 0.0
 
 # Initialize Mininet topology and network DTN manager (if enabled)
 topology = None
