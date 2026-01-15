@@ -115,8 +115,18 @@ export interface OrbitalData {
     data_rate_kbps: number;
   }>;
   dtn_queues: Record<string, DTNBundle[]>;
+  iss_queue?: DTNBundle[];
   custody_acks: CustodyAck[];
   delivered_bundles: DTNBundle[];
+  station_decrypted_messages?: Record<string, Array<{
+    bundle_id: string;
+    decrypted_payload: string;
+    source_station: string;
+    destination_station: string;
+    reassembled_at: string;
+    fragments_count: number;
+    is_broadcast?: boolean;
+  }>>;
   active_transmissions: ActiveTransmission[];
   mesh_connections?: Array<{
     from: string;

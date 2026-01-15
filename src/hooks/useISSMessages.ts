@@ -97,7 +97,8 @@ export const useISSMessages = () => {
   const sendReply = useCallback(async (
     destinationStation: string,
     payload: string,
-    priority: "EXPEDITED" | "NORMAL" | "BULK" = "NORMAL"
+    priority: "EXPEDITED" | "NORMAL" | "BULK" = "NORMAL",
+    isBroadcast: boolean = false
   ): Promise<boolean> => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/iss/messages/reply`, {
@@ -109,6 +110,7 @@ export const useISSMessages = () => {
           destination_station: destinationStation,
           payload,
           priority,
+          is_broadcast: isBroadcast,
         }),
       });
       if (!response.ok) throw new Error('Failed to send reply');
@@ -121,9 +123,10 @@ export const useISSMessages = () => {
   }, []);
 
   useEffect(() => {
+    // Fetch immediately when hook is used
     fetchMessages();
-    // Poll for updates every 2 seconds
-    const interval = setInterval(fetchMessages, 2000);
+    // Poll for updates every 1 second for more responsive updates
+    const interval = setInterval(fetchMessages, 1000);
     return () => clearInterval(interval);
   }, [fetchMessages]);
 

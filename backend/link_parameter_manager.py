@@ -182,17 +182,3 @@ class LinkParameterManager:
             "loss_percent": loss_percent,
             "jitter_ms": jitter_ms
         }
-    
-    def get_ground_link_params(self) -> Dict:
-        """
-        Get parameters for ground station links (terrestrial network)
-        
-        Returns:
-            Dictionary with ground link parameters
-        """
-        return {
-            "bandwidth_mbps": 100.0,  # 100 Mbps
-            "delay_ms": 50.0,  # 50ms base delay
-            "loss_percent": 5.0,  # 5% packet loss
-            "jitter_ms": 2.0  # 2ms jitter
-        }

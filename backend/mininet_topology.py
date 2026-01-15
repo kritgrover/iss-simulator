@@ -70,8 +70,7 @@ class ISSTopology:
         Calculate partial mesh topology - each station connects to 3 nearest neighbors
         Returns list of (station1_id, station2_id) tuples
         """
-        connections = []
-        station_ids = [s["id"] for s in self.ground_stations]
+        connections = set()  # Use set to automatically prevent duplicates
         
         for i, station1 in enumerate(self.ground_stations):
             # Calculate distances to all other stations
@@ -87,16 +86,15 @@ class ISSTopology:
             # Sort by distance and connect to 3 nearest
             distances.sort(key=lambda x: x[0])
             for dist, station2_id in distances[:3]:
-                # Avoid duplicate connections (only add if station1 < station2)
+                # Always store with smaller ID first to ensure consistency and prevent duplicates
                 if station1["id"] < station2_id:
-                    connections.append((station1["id"], station2_id))
-                elif station2_id < station1["id"]:
-                    # Check if reverse connection already exists
-                    if (station2_id, station1["id"]) not in connections:
-                        connections.append((station1["id"], station2_id))
+                    connections.add((station1["id"], station2_id))
+                else:
+                    connections.add((station2_id, station1["id"]))
         
-        info("📡 Mesh topology: {} ground station connections\n".format(len(connections)))
-        return connections
+        connections_list = list(connections)
+        info("📡 Mesh topology: {} ground station connections\n".format(len(connections_list)))
+        return connections_list
     
     def build(self):
         """Build the Mininet topology"""
@@ -322,19 +320,6 @@ class ISSTopology:
         except Exception as e:
             error("❌ Failed to apply link parameters: {}\n".format(e))
     
-    def remove_iss_link(self, station_id: str):
-        """
-        Remove ISS link to a ground station
-        
-        Args:
-            station_id: Ground station ID
-        """
-        if station_id not in self.iss_links:
-            return
-        
-        del self.iss_links[station_id]
-        info("🗑️  Removed ISS link to {}\n".format(station_id))
-    
     def get_node(self, node_id: str) -> Optional[Host]:
         """Get a node by ID (case-insensitive for ISS)"""
         node_id_lower = node_id.lower()
@@ -358,31 +343,6 @@ class ISSTopology:
                     return ip
             except (AttributeError, RuntimeError) as e:
                 error("❌ Error getting IP for {}: {}\n".format(node_id, e))
-            return None
-        return None
-    
-    def get_all_station_ips(self) -> Dict[str, str]:
-        """Get all ground station IP addresses"""
-        result = {}
-        for station_id, node in self.station_nodes.items():
-            try:
-                ip = node.IP()
-                if ip:
-                    result[station_id] = ip
-            except (AttributeError, RuntimeError):
-                # IP not available yet or node not started
-                pass
-        return result
-    
-    def get_iss_ip(self) -> Optional[str]:
-        """Get ISS node IP address"""
-        if self.iss_node:
-            try:
-                ip = self.iss_node.IP()
-                if ip:
-                    return ip
-            except (AttributeError, RuntimeError) as e:
-                error("❌ Error getting ISS IP: {}\n".format(e))
             return None
         return None
     

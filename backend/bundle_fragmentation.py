@@ -178,15 +178,4 @@ class BundleFragmentationManager:
             del self.fragments[parent_bundle_id]
         
         return reassembled
-    
-    def get_fragments(self, bundle_id: str) -> List[BundleFragment]:
-        """Get all fragments for a bundle"""
-        return self.fragments.get(bundle_id, [])
-    
-    def cleanup_fragments(self, bundle_id: str):
-        """Clean up fragments for a bundle"""
-        if bundle_id in self.fragments:
-            del self.fragments[bundle_id]
-        if bundle_id in self.reassembly_buffers:
-            del self.reassembly_buffers[bundle_id]
 

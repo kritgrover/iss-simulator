@@ -49,9 +49,21 @@ class NetworkDTNManager(DTNBundleManager):
         self.server_threads = {} 
         self.running = False
         self.message_handlers = {} 
-        self.connections = {} 
+        self.connections = {}
+        self._node_locks = {}  # Per-node locks for thread-safe cmd() calls
         
         print("🌐 NetworkDTNManager initialized")
+    
+    def _get_node_lock(self, node_id: str) -> threading.Lock:
+        """Get or create a lock for a specific node to serialize cmd() calls.
+        
+        Mininet's node.cmd() is NOT thread-safe - calling it from multiple threads
+        simultaneously causes AssertionError. This lock ensures only one thread
+        can execute cmd() on a given node at a time.
+        """
+        if node_id not in self._node_locks:
+            self._node_locks[node_id] = threading.Lock()
+        return self._node_locks[node_id]
     
     def start_servers(self):
         """Start TCP servers for all nodes within their Mininet namespaces"""
@@ -137,22 +149,6 @@ class NetworkDTNManager(DTNBundleManager):
             ))
         except Exception as e:
             print("❌ Failed to start server for {}: {}".format(node_id, e))
-    
-    def _handle_connection(self, node_id: str, client_socket: socket.socket, addr):
-        """Handle incoming connection"""
-        try:
-            while self.running:
-                # Receive message
-                message = self._receive_message(client_socket)
-                if not message:
-                    break
-                
-                # Process message
-                self._process_message(node_id, message, client_socket)
-        except Exception as e:
-            print("❌ Connection error for {}: {}".format(node_id, e))
-        finally:
-            client_socket.close()
     
     def _receive_message(self, sock: socket.socket) -> Optional[Dict]:
         """Receive a message from socket"""
@@ -262,6 +258,48 @@ class NetworkDTNManager(DTNBundleManager):
                 import hashlib
                 payload_hash = hashlib.sha256(encrypted_payload.encode('utf-8')).hexdigest()
             
+            # Reconstruct security blocks from received data
+            pcb = None
+            pib = None
+            bab = None
+            
+            pcb_data = bundle_data.get('pcb')
+            if pcb_data:
+                from bsp_security import PayloadConfidentialityBlock
+                if isinstance(pcb_data, str):
+                    pcb_data = json.loads(pcb_data)
+                pcb = PayloadConfidentialityBlock(
+                    security_target=pcb_data.get('security_target', 'payload'),
+                    security_source=pcb_data.get('security_source', ''),
+                    encryption_method=pcb_data.get('encryption_method', 'AES-256-CBC'),
+                    key_id=pcb_data.get('key_id', ''),
+                    iv=pcb_data.get('iv', '')
+                )
+            
+            pib_data = bundle_data.get('pib')
+            if pib_data:
+                from bsp_security import PayloadIntegrityBlock
+                if isinstance(pib_data, str):
+                    pib_data = json.loads(pib_data)
+                pib = PayloadIntegrityBlock(
+                    security_target=pib_data.get('security_target', 'payload'),
+                    security_source=pib_data.get('security_source', ''),
+                    signature=pib_data.get('signature', ''),
+                    signer=pib_data.get('signer', '')
+                )
+            
+            bab_data = bundle_data.get('bab')
+            if bab_data:
+                from bsp_security import BundleAuthenticationBlock
+                if isinstance(bab_data, str):
+                    bab_data = json.loads(bab_data)
+                bab = BundleAuthenticationBlock(
+                    security_target=bab_data.get('security_target', ''),
+                    security_source=bab_data.get('security_source', ''),
+                    mac=bab_data.get('mac', ''),
+                    key_id=bab_data.get('key_id', '')
+                )
+            
             bundle = DTNBundle(
                 bundle_id=bundle_id,
                 source_station=source_station,
@@ -272,7 +310,10 @@ class NetworkDTNManager(DTNBundleManager):
                 created_at=datetime.now(timezone.utc),
                 ttl_hours=24,  # Default TTL
                 current_custodian=node_id,  
-                hops=[source_station]  # Start with source station, will be updated when ACK processed
+                hops=[source_station],  # Start with source station, will be updated when ACK processed
+                pcb=pcb,
+                pib=pib,
+                bab=bab
             )
             self.bundles[bundle_id] = bundle
             
@@ -305,12 +346,18 @@ class NetworkDTNManager(DTNBundleManager):
         # Capture sender (current custodian) before process_ack updates it
         sender_station = bundle.current_custodian
         
+        # Check if this is the final destination (ISS or the target ground station)
+        is_final_destination = (
+            node_id.lower() == 'iss' or 
+            node_id.lower() == bundle.destination_station.lower()
+        )
+        
         ack_data = {
             'type': 'ack',
             'bundle_id': bundle_id,
             'from_station': node_id,  # Receiver
             'to_station': sender_station,  # Sender
-            'ack_type': 'delivered' if node_id.lower() == 'iss' else 'custody_accepted',
+            'ack_type': 'delivered' if is_final_destination else 'custody_accepted',
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'checksum': message.get('checksum')
         }
@@ -399,22 +446,45 @@ class NetworkDTNManager(DTNBundleManager):
         # Use encrypted_payload (bundles are now always encrypted)
         payload_escaped = shlex.quote(bundle.encrypted_payload)
         
+        # Prepare security blocks as JSON strings
+        pcb_json = "null"
+        pib_json = "null"
+        bab_json = "null"
+        payload_hash = bundle.payload_hash if hasattr(bundle, 'payload_hash') else "null"
+        
+        if bundle.pcb:
+            pcb_json = shlex.quote(json.dumps(bundle.pcb.to_dict()))
+        if bundle.pib:
+            pib_json = shlex.quote(json.dumps(bundle.pib.to_dict()))
+        if bundle.bab:
+            bab_json = shlex.quote(json.dumps(bundle.bab.to_dict()))
+        
         # Build command to run client script within source node's namespace
-        cmd = 'python3 {} {} {} {} {} {} {}'.format(
+        # Args: dest_ip bundle_id source_station destination_station payload priority pcb pib bab payload_hash
+        cmd = 'python3 {} {} {} {} {} {} {} {} {} {} {}'.format(
             client_script,
             dest_ip,
             bundle_id,
             bundle.source_station,
             bundle.destination_station,
             payload_escaped,
-            bundle.priority.value
+            bundle.priority.value,
+            pcb_json,
+            pib_json,
+            bab_json,
+            shlex.quote(payload_hash) if payload_hash != "null" else "null"
         )
         
         try:
-            # Run client script within source node's namespace
-            # This ensures the socket connection uses the node's network namespace
-            # cmd() runs synchronously and captures stdout/stderr
-            result = source_node.cmd(cmd)
+            # Get lock for this source node to prevent concurrent cmd() calls
+            # Mininet's cmd() is NOT thread-safe
+            node_lock = self._get_node_lock(from_node)
+            
+            with node_lock:
+                # Run client script within source node's namespace
+                # This ensures the socket connection uses the node's network namespace
+                # cmd() runs synchronously and captures stdout/stderr
+                result = source_node.cmd(cmd)
             
             # Check result output for success/failure indicators
             result_lower = result.lower()
@@ -422,12 +492,17 @@ class NetworkDTNManager(DTNBundleManager):
             # Check for success indicators
             if '✅ ack received' in result_lower or 'ack received' in result_lower:
                 # Bundle was successfully sent and ACK received
+                # Check if this is the final destination (ISS or the target ground station)
+                is_final_destination = (
+                    to_node.lower() == 'iss' or 
+                    to_node.lower() == bundle.destination_station.lower()
+                )
                 ack_data = {
                     'type': 'ack',
                     'bundle_id': bundle_id,
                     'from_station': to_node,
                     'to_station': from_node,
-                    'ack_type': 'custody_accepted' if to_node.lower() != 'iss' else 'delivered',
+                    'ack_type': 'delivered' if is_final_destination else 'custody_accepted',
                     'timestamp': datetime.now(timezone.utc).isoformat(),
                     'checksum': bundle.checksum
                 }
@@ -559,6 +634,10 @@ class NetworkDTNManager(DTNBundleManager):
         if transmission:
             bundle = self.bundles.get(bundle_id)
             if bundle:
+                # Use composite key for broadcasts to allow multiple simultaneous transmissions
+                is_broadcast = bundle.destination_station.upper() == "BROADCAST"
+                status_key = "{}:{}".format(bundle_id, to_station) if is_broadcast else bundle_id
+                
                 from dtn_bundle_manager import PendingAcknowledgment
                 now = datetime.now(timezone.utc)
                 pending_ack = PendingAcknowledgment(
@@ -571,15 +650,24 @@ class NetworkDTNManager(DTNBundleManager):
                     max_retries=self.MAX_RETRIES,
                     data_rate_bps=data_rate_bps
                 )
-                self.pending_acknowledgments[bundle_id] = pending_ack
+                # Use composite key for pending acknowledgments for broadcasts
+                self.pending_acknowledgments[status_key] = pending_ack
                 bundle.status = BundleStatus.WAITING_ACK
+            else:
+                # Fallback if bundle not found
+                bundle = self.bundles.get(bundle_id)
+                is_broadcast = bundle and bundle.destination_station.upper() == "BROADCAST"
+                status_key = "{}:{}".format(bundle_id, to_station) if is_broadcast else bundle_id
             
             # Track network send status
             if not hasattr(self, '_network_send_status'):
                 self._network_send_status = {}  
             
-            # Initialize status as pending
-            self._network_send_status[bundle_id] = {'success': False, 'completed': False, 'failure_reason': None}
+            # Initialize status as pending - use composite key for broadcasts
+            self._network_send_status[status_key] = {'success': False, 'completed': False, 'failure_reason': None}
+            
+            # Capture status_key for closure
+            thread_status_key = status_key
             
             # Send bundle over network in background thread
             def send_thread():
@@ -589,9 +677,9 @@ class NetworkDTNManager(DTNBundleManager):
                 # Send bundle over network
                 success = self.send_bundle_over_network(bundle_id, from_station, to_station)
                 
-                # Update status
-                failure_reason = self._network_send_status.get(bundle_id, {}).get('failure_reason')
-                self._network_send_status[bundle_id] = {
+                # Update status using captured status_key
+                failure_reason = self._network_send_status.get(thread_status_key, {}).get('failure_reason')
+                self._network_send_status[thread_status_key] = {
                     'success': success, 
                     'completed': True,
                     'failure_reason': failure_reason
@@ -614,7 +702,9 @@ class NetworkDTNManager(DTNBundleManager):
         """
         completed = []
         
-        for bundle_id, transmission in list(self.active_transmissions.items()):
+        for transmission_key, transmission in list(self.active_transmissions.items()):
+            # Extract actual bundle_id from transmission object (transmission_key may be composite for broadcasts)
+            bundle_id = transmission.bundle_id
             from_station = transmission.from_station
             is_contact_maintained = station_contact_states.get(from_station, False)
             
@@ -624,13 +714,14 @@ class NetworkDTNManager(DTNBundleManager):
                 print(f"⚠️  Transmission of {bundle_id[:8]} ABORTED after {elapsed:.1f}s (contact lost)")
                 print(f"   Progress: {transmission.progress_percent():.1f}% ({transmission.bytes_transmitted:.0f}/{transmission.size_bytes} bytes)")
                 
-                bundle = self.bundles[bundle_id]
-                bundle.status = BundleStatus.QUEUED  # Back to queue
+                bundle = self.bundles.get(bundle_id)
+                if bundle:
+                    bundle.status = BundleStatus.QUEUED  # Back to queue
                 
                 # Update DB
                 self.db_manager.update_bundle_status(bundle_id=bundle_id, status=BundleStatus.QUEUED.value)
                 
-                del self.active_transmissions[bundle_id]
+                del self.active_transmissions[transmission_key]
                 continue
             
             # Update bytes transmitted (simulated progress)
@@ -644,7 +735,7 @@ class NetworkDTNManager(DTNBundleManager):
             if transmission.is_complete():
                 # Check if network send actually completed successfully
                 if hasattr(self, '_network_send_status'):
-                    status = self._network_send_status.get(bundle_id, {'completed': False, 'success': False, 'failure_reason': None})
+                    status = self._network_send_status.get(transmission_key, {'completed': False, 'success': False, 'failure_reason': None})
                     
                     if status['completed'] and status['success']:
                         elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
@@ -655,11 +746,10 @@ class NetworkDTNManager(DTNBundleManager):
                         print(f"   Average Rate: {(transmission.size_bytes * 8 / elapsed / 1000):.1f} kbps")
                         
                         completed.append((bundle_id, transmission.data_rate_bps))
-                        del self.active_transmissions[bundle_id]
+                        del self.active_transmissions[transmission_key]
                     elif status['completed'] and not status['success']:
                         failure_reason = status.get('failure_reason', 'unknown')
                         bundle = self.bundles.get(bundle_id)
-                        transmission = self.active_transmissions.get(bundle_id)
                         
                         if bundle and transmission:
                             transmission.retransmission_count += 1
@@ -682,11 +772,11 @@ class NetworkDTNManager(DTNBundleManager):
                                 )
                                 
                                 # Remove from active transmissions so it can be picked up again
-                                del self.active_transmissions[bundle_id]
+                                del self.active_transmissions[transmission_key]
                                 
-                                # Remove from pending acknowledgments if present
-                                if bundle_id in self.pending_acknowledgments:
-                                    del self.pending_acknowledgments[bundle_id]
+                                # Remove from pending acknowledgments if present (use transmission_key for broadcasts)
+                                if transmission_key in self.pending_acknowledgments:
+                                    del self.pending_acknowledgments[transmission_key]
                                 
                                 print("⚠️  Bundle {} transmission failed ({}), requeuing for retry (attempt {}/{})".format(
                                     bundle_id[:8], 
@@ -704,11 +794,11 @@ class NetworkDTNManager(DTNBundleManager):
                                 bundle.forwarded_to = None
                                 
                                 # Remove from active transmissions
-                                del self.active_transmissions[bundle_id]
+                                del self.active_transmissions[transmission_key]
                                 
                                 # Remove from pending acknowledgments if present
-                                if bundle_id in self.pending_acknowledgments:
-                                    del self.pending_acknowledgments[bundle_id]
+                                if transmission_key in self.pending_acknowledgments:
+                                    del self.pending_acknowledgments[transmission_key]
                                 
                                 # Mark as failed
                                 self._mark_bundle_failed(bundle_id, f"{failure_reason}_max_retries")
@@ -727,7 +817,7 @@ class NetworkDTNManager(DTNBundleManager):
                     print(f"   Average Rate: {(transmission.size_bytes * 8 / elapsed / 1000):.1f} kbps")
                     
                     completed.append((bundle_id, transmission.data_rate_bps))
-                    del self.active_transmissions[bundle_id]
+                    del self.active_transmissions[transmission_key]
         
         return completed
     

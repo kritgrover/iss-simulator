@@ -26,6 +26,15 @@ interface MessageExchangeProps {
   } | null;
   dtnQueues?: Record<string, DTNBundle[]>;
   custodyAcks?: CustodyAck[];
+  stationDecryptedMessages?: Record<string, Array<{
+    bundle_id: string;
+    decrypted_payload: string;
+    source_station: string;
+    destination_station: string;
+    reassembled_at: string;
+    fragments_count: number;
+    is_broadcast?: boolean;
+  }>>;
 }
 
 type MessageMode = "TCP" | "DTN";
@@ -52,7 +61,8 @@ const MessageExchange = ({
   handoffCount,
   linkStatus,
   dtnQueues,
-  custodyAcks = []
+  custodyAcks = [],
+  stationDecryptedMessages = {}
 }: MessageExchangeProps) => {
   const [message, setMessage] = useState("");
   // Initialize with empty array - will be populated on mount with current time
@@ -62,6 +72,7 @@ const MessageExchange = ({
   const messageIdCounter = useRef(0);
   const messagesRef = useRef<Message[]>([]);
   const initializedMessageIds = useRef<Set<number>>(new Set());
+  const displayedBundleIds = useRef<Set<string>>(new Set()); // Track displayed ISS messages
   const [protocolDirection, setProtocolDirection] = useState<'uplink' | 'downlink' | null>(null);
   const [mode, setMode] = useState<MessageMode>("TCP");
   const [bundlePriority, setBundlePriority] = useState<"EXPEDITED" | "NORMAL" | "BULK">("NORMAL");
@@ -220,6 +231,44 @@ const MessageExchange = ({
     }
   }, [mode, stationQueue]);
 
+  // Process ISS decrypted messages for this station
+  useEffect(() => {
+    const stationMessages = stationDecryptedMessages[activeStationId] || [];
+    stationMessages.forEach(msg => {
+      // Only display if not already displayed
+      if (!displayedBundleIds.current.has(msg.bundle_id)) {
+        displayedBundleIds.current.add(msg.bundle_id);
+        
+        // Determine message prefix based on message type
+        let messageText = "";
+        if (msg.is_broadcast === true || msg.destination_station === "BROADCAST") {
+          // Broadcast message
+          messageText = `BROADCAST Message Received: ${msg.decrypted_payload}`;
+        } else {
+          // Specific station message
+          messageText = `Message Received from ISS: ${msg.decrypted_payload}`;
+        }
+        
+        const newMessage: Message = {
+          id: messageIdCounter.current++,
+          text: messageText,
+          success: true,
+          time: new Date(msg.reassembled_at).toLocaleTimeString('en-US', { hour12: false }),
+          station: activeStationId,
+          mode: "DTN",
+          bundleId: msg.bundle_id.substring(0, 8),
+          status: "DELIVERED"
+        };
+        
+        setMessages(prev => {
+          const updated = [...prev, newMessage];
+          messagesRef.current = updated;
+          return updated;
+        });
+      }
+    });
+  }, [stationDecryptedMessages, activeStationId]);
+
   // Process custody ACKs
   useEffect(() => {
     if (custodyAcks && custodyAcks.length > 0) {
@@ -341,7 +390,7 @@ const MessageExchange = ({
           const bundle = result.bundle;
           const newMessage: Message = {
             id: messageIdCounter.current++,
-            text: `[${stationName}] Bundle created: ${message}`,
+            text: `[${stationName}] Bundle created: 🔐 ${bundle.payload_hash_short || bundle.payload_hash || 'encrypted'}`,
             success: true,
             time: timestamp,
             station: activeStationId,

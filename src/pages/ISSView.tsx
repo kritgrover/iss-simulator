@@ -4,6 +4,7 @@ import ISSEarthView from "@/components/iss/ISSEarthView";
 import MessageInbox from "@/components/iss/MessageInbox";
 import MessageReassembly from "@/components/iss/MessageReassembly";
 import MessageReply from "@/components/iss/MessageReply";
+import ISSNetworkQueue from "@/components/iss/ISSNetworkQueue";
 import ISSDashboard from "@/components/iss/ISSDashboard";
 import OrbitalParameters from "@/components/dashboard/OrbitalParameters";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -13,9 +14,14 @@ import { useISSMessages, ISSMessage } from "@/hooks/useISSMessages";
 
 const ISSView = () => {
   const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
-  const { messages } = useISSMessages();
+  const { messages, fetchMessages } = useISSMessages();
   const [selectedMessage, setSelectedMessage] = useState<ISSMessage | null>(null);
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
+
+  // Force immediate fetch when ISS view mounts to catch any messages that arrived while on ground view
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
 
   // Update stations with orbital data
   useEffect(() => {
@@ -153,7 +159,11 @@ const ISSView = () => {
           {/* Right Panel - Reply Interface */}
           <ResizablePanel defaultSize={30} minSize={20} className="bg-panel">
             <div className="h-full p-4 space-y-4 overflow-y-auto">
-              <MessageReply />
+              <MessageReply stations={stations} />
+              <ISSNetworkQueue 
+                bundles={orbitalData?.iss_queue || []} 
+                stations={stations} 
+              />
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

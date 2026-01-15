@@ -55,7 +55,7 @@ GROUND_STATIONS = [
     {"id": "moscow", "name": "Moscow", "lat": 55.7558, "lon": 37.6173},
 ]
 
-MIN_ELEVATION_FOR_VISIBILITY = -5.0
+MIN_ELEVATION_FOR_VISIBILITY = 0.0
 
 # Initialize Mininet topology and network DTN manager (if enabled)
 topology = None
@@ -307,20 +307,11 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         next_bundle = dtn_manager.bundles.get(next_bundle_id)
                         
                         if next_bundle:
-                            # Calculate route from ISS to destination
-                            route = dtn_manager.find_route(
-                                "ISS",
-                                next_bundle.destination_station,
-                                stations_data,
-                                visited=[]
-                            )
-                            
-                            if route and len(route) > 1:
-                                next_bundle.route = route
-                                dtn_manager.db_manager.update_bundle_route(next_bundle_id, route)
-                                
-                                # First hop is the visible station
-                                first_hop = route[1]  # route[0] is "ISS"
+                            # Handle broadcast bundles differently
+                            if next_bundle.destination_station.upper() == "BROADCAST":
+                                # For broadcast, just send to first visible station
+                                # Flooding will happen when it's received
+                                first_hop = station_id
                                 
                                 # Calculate data rate
                                 radial_velocity_data = tracker.calculate_radial_velocity(
@@ -337,7 +328,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                 data_rate_bps = link_budget.get("data_rate_bps", 0)
                                 
                                 if data_rate_bps > 0:
-                                    print(f"🛰️  ISS transmitting bundle {next_bundle_id[:8]} to {first_hop.upper()} (route: {' → '.join(route)})")
+                                    print(f"📡 ISS transmitting BROADCAST bundle {next_bundle_id[:8]} to {first_hop.upper()} (will flood to all stations)")
                                     dtn_manager.start_transmission(
                                         next_bundle_id,
                                         "ISS",
@@ -345,6 +336,45 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                                         data_rate_bps,
                                         retransmission_count=0
                                     )
+                            else:
+                                # Calculate route from ISS to destination
+                                route = dtn_manager.find_route(
+                                    "ISS",
+                                    next_bundle.destination_station,
+                                    stations_data,
+                                    visited=[]
+                                )
+                                
+                                if route and len(route) > 1:
+                                    next_bundle.route = route
+                                    dtn_manager.db_manager.update_bundle_route(next_bundle_id, route)
+                                    
+                                    # First hop is the visible station
+                                    first_hop = route[1]  # route[0] is "ISS"
+                                    
+                                    # Calculate data rate
+                                    radial_velocity_data = tracker.calculate_radial_velocity(
+                                        best_station["lat"],
+                                        best_station["lon"]
+                                    )
+                                    
+                                    link_budget = link_budget_calc.calculate_link_budget(
+                                        best_station["look_angles"]["range_km"],
+                                        best_station["look_angles"]["elevation"],
+                                        radial_velocity_data["radial_velocity_kmps"]
+                                    )
+                                    
+                                    data_rate_bps = link_budget.get("data_rate_bps", 0)
+                                    
+                                    if data_rate_bps > 0:
+                                        print(f"🛰️  ISS transmitting bundle {next_bundle_id[:8]} to {first_hop.upper()} (route: {' → '.join(route)})")
+                                        dtn_manager.start_transmission(
+                                            next_bundle_id,
+                                            "ISS",
+                                            first_hop,
+                                            data_rate_bps,
+                                            retransmission_count=0
+                                        )
             
             # Process DTN bundles - start new transmissions or forward
             for station_data in stations_data:
@@ -357,30 +387,40 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 if not queue:
                     continue  # No bundles to process
                 
-                # Check if this station is already transmitting or waiting for ACK
-                is_transmitting = any(
-                    t.from_station == station_id 
-                    for t in dtn_manager.active_transmissions.values()
-                )
-                
-                # Also check if station is waiting for ACK on any bundle
-                is_waiting_ack = any(
-                    pending.from_station == station_id
-                    for pending in dtn_manager.pending_acknowledgments.values()
-                )
-                
-                if is_transmitting or is_waiting_ack:
-                    continue  # Already transmitting or waiting for ACK, don't start another
-                
                 # Queue is now pre-sorted by priority in dtn_bundle_manager
-                next_bundle_id = queue[0]
-                next_bundle = dtn_manager.bundles.get(next_bundle_id)
+                # Skip bundles that are waiting for ACK or already delivered/expired
+                next_bundle_id = None
+                next_bundle = None
+                for bundle_id in queue:
+                    bundle = dtn_manager.bundles.get(bundle_id)
+                    if bundle and bundle.status not in [BundleStatus.WAITING_ACK, BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
+                        next_bundle_id = bundle_id
+                        next_bundle = bundle
+                        break
                 
-                if not next_bundle:
-                    continue  # Bundle doesn't exist
+                if not next_bundle_id or not next_bundle:
+                    continue  # No valid bundle to process
                 
                 # Check bundle destination first
                 bundle_destination = next_bundle.destination_station
+                
+                # Check if this station is already transmitting or waiting for ACK
+                # Skip this check for broadcast bundles (they can have multiple simultaneous transmissions)
+                is_broadcast = bundle_destination.upper() == "BROADCAST"
+                if not is_broadcast:
+                    is_transmitting = any(
+                        t.from_station == station_id 
+                        for t in dtn_manager.active_transmissions.values()
+                    )
+                    
+                    # Also check if station is waiting for ACK on any bundle
+                    is_waiting_ack = any(
+                        pending.from_station == station_id
+                        for pending in dtn_manager.pending_acknowledgments.values()
+                    )
+                    
+                    if is_transmitting or is_waiting_ack:
+                        continue  # Already transmitting or waiting for ACK, don't start another
                 
                 # Case 1: Bundle destination is ISS and this station can see ISS - transmit directly
                 if bundle_destination.upper() == "ISS" and is_visible:
@@ -426,7 +466,61 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         )
                         continue  # Skip forwarding logic, bundle is being sent to ISS
                 
-                # Case 2: Bundle destination is a ground station OR this station can't see ISS
+                # Case 2: Handle BROADCAST bundles - flood to all neighbors
+                if bundle_destination.upper() == "BROADCAST":
+                    # Mark this station as having received the broadcast
+                    if not dtn_manager.has_received_broadcast(next_bundle_id, station_id):
+                        dtn_manager.mark_broadcast_received(next_bundle_id, station_id)
+                        print(f"📡 {station_id.upper()} received BROADCAST bundle {next_bundle_id[:8]}")
+                    
+                    # Get neighbors that haven't received the broadcast yet
+                    unreceived_neighbors = dtn_manager.get_broadcast_unreceived_neighbors(next_bundle_id, station_id)
+                    
+                    if unreceived_neighbors:
+                        # Flood to ALL unreceived neighbors simultaneously
+                        ground_link_bps = 100_000_000
+                        transmissions_started = 0
+                        
+                        for neighbor in unreceived_neighbors:
+                            # Check if we're already transmitting this bundle to this neighbor
+                            already_transmitting = any(
+                                t.bundle_id == next_bundle_id and 
+                                t.from_station == station_id and 
+                                t.to_station == neighbor
+                                for t in dtn_manager.active_transmissions.values()
+                            )
+                            
+                            if not already_transmitting:
+                                transmission = dtn_manager.start_transmission(
+                                    next_bundle_id,
+                                    station_id,
+                                    neighbor,
+                                    ground_link_bps,
+                                    retransmission_count=0
+                                )
+                                if transmission:
+                                    transmissions_started += 1
+                        
+                        if transmissions_started > 0:
+                            print(f"📡 {station_id.upper()} flooding BROADCAST bundle {next_bundle_id[:8]} to {transmissions_started} neighbor(s): {', '.join([n.upper() for n in unreceived_neighbors[:transmissions_started]])}")
+                        continue
+                    else:
+                        # All neighbors have received it - remove from this station's queue
+                        print(f"✅ {station_id.upper()} has forwarded BROADCAST bundle {next_bundle_id[:8]} to all neighbors")
+                        # Remove from this station's queue to prevent infinite loop
+                        if next_bundle_id in dtn_manager.station_queues.get(station_id, []):
+                            dtn_manager.station_queues[station_id].remove(next_bundle_id)
+                        # Mark bundle as delivered at this station
+                        next_bundle.status = BundleStatus.DELIVERED
+                        next_bundle.delivered_at = datetime.now(timezone.utc)
+                        dtn_manager.db_manager.update_bundle_status(
+                            bundle_id=next_bundle_id,
+                            status=BundleStatus.DELIVERED.value,
+                            delivered_at=next_bundle.delivered_at.isoformat()
+                        )
+                        continue
+                
+                # Case 3: Bundle destination is a ground station OR this station can't see ISS
                 if bundle_destination.upper() != "ISS" or not is_visible:
                     # Check if bundle has a route - if so, use it for forwarding
                     next_hop_from_route = dtn_manager.get_next_hop_from_route(next_bundle_id)
@@ -451,8 +545,23 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                             retransmission_count=retry_count
                         )
                         continue  # Don't check for other forwarding options
+                    else:
+                        # Check if we are at the end of the route and destination is ISS (waiting for pass)
+                        # If so, we are at the designated uplink station and should wait here
+                        is_waiting_for_iss = (bundle_destination.upper() == "ISS" and 
+                                              next_bundle.route and 
+                                              next_bundle.route[-1] == station_id)
+                        
+                        if is_waiting_for_iss:
+                            # We are at the uplink station, just waiting for ISS pass
+                            pass
+                        # Route exists but next hop is invalid (stale route) - clear it for recalculation
+                        elif next_bundle.route and len(next_bundle.route) > 0:
+                            print(f"⚠️  Route for bundle {next_bundle_id[:8]} is stale (next hop already visited or invalid), recalculating...")
+                            next_bundle.route = []
+                            dtn_manager.db_manager.update_bundle_route(next_bundle_id, [])
                     
-                    # No route exists - calculate one if we have mesh connections
+                    # No route exists or route was cleared - calculate one if we have mesh connections
                     if not next_bundle.route or len(next_bundle.route) == 0:
                         final_destination = bundle_destination if bundle_destination.upper() != "ISS" else "ISS"
                         route = dtn_manager.find_route(
@@ -720,8 +829,17 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             # Get DTN bundle queues for all stations
             dtn_queues = dtn_manager.get_all_queues()
 
+            # Get ISS queue
+            iss_queue = dtn_manager.get_iss_queue()
+
             # Get delivered bundles for history
             delivered_bundles = dtn_manager.get_delivered_bundles() 
+            
+            # Get broadcast deliveries (each station's receipt of broadcasts)
+            broadcast_deliveries = dtn_manager.get_broadcast_deliveries()
+            
+            # Get decrypted messages for all stations
+            station_decrypted_messages = dtn_manager.get_station_decrypted_messages()
             
             # Get failed bundles for history
             failed_bundles = dtn_manager.get_failed_bundles()
@@ -755,14 +873,26 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "link_status": link_status,
                 "link_budget_history": list(link_budget_history),
                 "dtn_queues": dtn_queues,
+                "iss_queue": iss_queue,
                 "delivered_bundles": delivered_bundles,
+                "broadcast_deliveries": broadcast_deliveries,
+                "station_decrypted_messages": station_decrypted_messages,
                 "failed_bundles": failed_bundles,
                 "custody_acks": pending_acks,
                 "active_transmissions": active_transmissions,
                 "mesh_connections": mesh_connections
             }
             
-            await websocket.send_json(data)
+            try:
+                await websocket.send_json(data)
+            except Exception as send_error:
+                print(f"❌ Error sending websocket data: {send_error}")
+                # Check if it's a connection error
+                if "connection closed" in str(send_error).lower() or "1005" in str(send_error):
+                    print("   Connection closed by client, stopping...")
+                    break
+                raise
+            
             await asyncio.sleep(1)
             
     except WebSocketDisconnect:
@@ -809,6 +939,7 @@ class ISSReplyRequest(BaseModel):
     payload: str
     priority: str = "NORMAL"
     ttl_hours: int = 24
+    is_broadcast: bool = False
 
 @app.get("/api/iss/messages")
 async def get_iss_messages():
@@ -852,15 +983,24 @@ async def reassemble_message(bundle_id: str):
 
 @app.post("/api/iss/messages/reply")
 async def create_iss_reply(request: ISSReplyRequest):
-    """Create reply bundle from ISS to ground station"""
+    """Create reply bundle from ISS to ground station (or broadcast)"""
     try:
-        print(f"📤 ISS creating reply bundle to {request.destination_station}")
-        bundle = dtn_manager.create_iss_reply_bundle(
-            destination_station=request.destination_station,
-            payload=request.payload,
-            priority=request.priority,
-            ttl_hours=request.ttl_hours
-        )
+        if request.is_broadcast:
+            print(f"📡 ISS creating broadcast bundle to all stations")
+            bundle = dtn_manager.create_iss_reply_bundle(
+                destination_station="BROADCAST",
+                payload=request.payload,
+                priority=request.priority,
+                ttl_hours=request.ttl_hours
+            )
+        else:
+            print(f"📤 ISS creating reply bundle to {request.destination_station}")
+            bundle = dtn_manager.create_iss_reply_bundle(
+                destination_station=request.destination_station,
+                payload=request.payload,
+                priority=request.priority,
+                ttl_hours=request.ttl_hours
+            )
         
         # Calculate route for the reply
         # We need station data - get it from the latest orbital data if available

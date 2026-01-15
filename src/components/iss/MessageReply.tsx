@@ -1,26 +1,31 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useISSMessages } from "@/hooks/useISSMessages";
-import { DEFAULT_STATIONS } from "@/types/groundStation";
-import { Send, Radio, Loader2 } from "lucide-react";
+import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
+import { Send, Radio, Loader2, Megaphone } from "lucide-react";
 import { useState } from "react";
 import { toast } from "@/hooks/use-toast";
 
-const MessageReply = () => {
+interface MessageReplyProps {
+  stations?: GroundStation[];
+}
+
+const MessageReply = ({ stations = DEFAULT_STATIONS }: MessageReplyProps) => {
   const { sendReply } = useISSMessages();
   const [destinationStation, setDestinationStation] = useState<string>("");
   const [message, setMessage] = useState("");
-  const [priority, setPriority] = useState<"EXPEDITED" | "NORMAL" | "BULK">("NORMAL");
   const [sending, setSending] = useState(false);
+  const [isBroadcast, setIsBroadcast] = useState(false);
 
   const handleSend = async () => {
-    if (!destinationStation) {
+    if (!isBroadcast && !destinationStation) {
       toast({
         title: "Error",
-        description: "Please select a destination station",
+        description: "Please select a destination station or enable broadcast",
         variant: "destructive",
       });
       return;
@@ -36,36 +41,37 @@ const MessageReply = () => {
     }
 
     setSending(true);
-    const success = await sendReply(destinationStation, message, priority);
+    // Always use EXPEDITED priority for ISS messages
+    const success = await sendReply(
+      isBroadcast ? "BROADCAST" : destinationStation, 
+      message, 
+      "EXPEDITED",
+      isBroadcast
+    );
     setSending(false);
 
     if (success) {
-      toast({
-        title: "Message Sent",
-        description: `Reply sent to ${DEFAULT_STATIONS.find(s => s.id === destinationStation)?.name || destinationStation}`,
-      });
+      if (isBroadcast) {
+        toast({
+          title: "Broadcast Queued",
+          description: `Broadcast message added to ISS queue. Will flood to all stations at next contact.`,
+        });
+      } else {
+        const stationName = stations.find(s => s.id === destinationStation)?.name || destinationStation;
+        toast({
+          title: "Message Queued",
+          description: `Reply to ${stationName} added to ISS queue. Will transmit at next contact.`,
+        });
+      }
       setMessage("");
       setDestinationStation("");
-      setPriority("NORMAL");
+      setIsBroadcast(false);
     } else {
       toast({
         title: "Error",
-        description: "Failed to send reply. Please try again.",
+        description: "Failed to queue reply. Please try again.",
         variant: "destructive",
       });
-    }
-  };
-
-  const getPriorityColor = (p: string) => {
-    switch (p) {
-      case "EXPEDITED":
-        return "text-red-400";
-      case "NORMAL":
-        return "text-cyan-400";
-      case "BULK":
-        return "text-gray-400";
-      default:
-        return "text-gray-400";
     }
   };
 
@@ -81,17 +87,52 @@ const MessageReply = () => {
         </div>
       </div>
       <div className="space-y-4">
+        {/* Broadcast Option */}
+        <div className="space-y-2">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="broadcast"
+              checked={isBroadcast}
+              onCheckedChange={(checked) => {
+                setIsBroadcast(checked === true);
+                if (checked) {
+                  setDestinationStation("");
+                }
+              }}
+            />
+            <Label
+              htmlFor="broadcast"
+              className="text-[10px] font-semibold tracking-wider uppercase text-secondary cursor-pointer flex items-center gap-2"
+            >
+              <Megaphone className="w-3 h-3" />
+              Broadcast to All Stations
+            </Label>
+          </div>
+          {isBroadcast && (
+            <div className="text-[10px] text-secondary font-mono pl-6">
+              Message will be flooded to all ground stations via mesh network
+            </div>
+          )}
+        </div>
+
         {/* Destination Station Selector */}
         <div className="space-y-2">
           <Label htmlFor="destination" className="text-[10px] font-semibold tracking-wider uppercase text-secondary">
             Destination Station
           </Label>
-          <Select value={destinationStation} onValueChange={setDestinationStation}>
-            <SelectTrigger id="destination" className="h-8 text-[11px] font-mono">
-              <SelectValue placeholder="Select a station" />
+          <Select 
+            value={destinationStation} 
+            onValueChange={setDestinationStation}
+            disabled={isBroadcast}
+          >
+            <SelectTrigger 
+              id="destination" 
+              className={`h-8 text-[11px] font-mono ${isBroadcast ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <SelectValue placeholder={isBroadcast ? "Broadcast mode (all stations)" : "Select a station"} />
             </SelectTrigger>
             <SelectContent>
-              {DEFAULT_STATIONS.map((station) => (
+              {stations.map((station) => (
                 <SelectItem key={station.id} value={station.id} className="text-[11px] font-mono">
                   <div className="flex items-center gap-2">
                     <div
@@ -99,32 +140,12 @@ const MessageReply = () => {
                       style={{ backgroundColor: station.color }}
                     />
                     {station.name}
+                    {station.isActive && (
+                      <span className="ml-2 text-[10px] text-green-500 font-bold">(VISIBLE)</span>
+                    )}
                   </div>
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Priority Selector */}
-        <div className="space-y-2">
-          <Label htmlFor="priority" className="text-[10px] font-semibold tracking-wider uppercase text-secondary">
-            Priority
-          </Label>
-          <Select value={priority} onValueChange={(v) => setPriority(v as typeof priority)}>
-            <SelectTrigger id="priority" className="h-8 text-[11px] font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="EXPEDITED" className="text-[11px] font-mono">
-                <span className={getPriorityColor("EXPEDITED")}>EXPEDITED</span>
-              </SelectItem>
-              <SelectItem value="NORMAL" className="text-[11px] font-mono">
-                <span className={getPriorityColor("NORMAL")}>NORMAL</span>
-              </SelectItem>
-              <SelectItem value="BULK" className="text-[11px] font-mono">
-                <span className={getPriorityColor("BULK")}>BULK</span>
-              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -150,32 +171,54 @@ const MessageReply = () => {
         {/* Send Button */}
         <Button
           onClick={handleSend}
-          disabled={sending || !destinationStation || !message.trim()}
+          disabled={sending || (!isBroadcast && !destinationStation) || !message.trim()}
           className="w-full h-8 text-[11px] font-mono"
         >
           {sending ? (
             <>
               <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-              Sending...
+              Queueing...
             </>
           ) : (
             <>
-              <Send className="w-3 h-3 mr-2" />
-              Send Reply
+              {isBroadcast ? (
+                <>
+                  <Megaphone className="w-3 h-3 mr-2" />
+                  Queue Broadcast
+                </>
+              ) : (
+                <>
+                  <Send className="w-3 h-3 mr-2" />
+                  Queue Reply
+                </>
+              )}
             </>
           )}
         </Button>
 
         {/* Route Preview */}
-        {destinationStation && (
+        {(destinationStation || isBroadcast) && (
           <div className="text-[11px] text-secondary p-2 bg-background/50 rounded border border-border">
             <div className="text-[10px] font-semibold tracking-wider uppercase text-secondary mb-1">Route Preview</div>
-            <div className="font-mono">
-              ISS → {DEFAULT_STATIONS.find(s => s.id === destinationStation)?.name || destinationStation}
-            </div>
-            <div className="text-[10px] text-secondary mt-1 font-mono">
-              Routing will be calculated automatically based on visible stations
-            </div>
+            {isBroadcast ? (
+              <>
+                <div className="font-mono">
+                  ISS → [First Contact] → All Stations (Flooding)
+                </div>
+                <div className="text-[10px] text-secondary mt-1 font-mono">
+                  Message will be sent to first available station, then flooded to all neighbors, then 2-hop neighbors, until all stations receive it.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-mono">
+                  ISS → {stations.find(s => s.id === destinationStation)?.name || destinationStation}
+                </div>
+                <div className="text-[10px] text-secondary mt-1 font-mono">
+                  Message will be queued and sent to the first available ground station, then routed via shortest path.
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

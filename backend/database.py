@@ -335,16 +335,3 @@ class DatabaseManager:
             
         return bundles
 
-    def delete_bundle(self, bundle_id: str):
-        """Delete a bundle from the database (useful for cleanup if needed)."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute("DELETE FROM bundles WHERE bundle_id = ?", (bundle_id,))
-            conn.commit()
-        except Exception as e:
-            print(f"❌ Database error deleting bundle {bundle_id}: {e}")
-        finally:
-            conn.close()
-

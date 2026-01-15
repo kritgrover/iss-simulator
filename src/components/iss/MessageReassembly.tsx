@@ -18,17 +18,18 @@ const MessageReassembly = ({ selectedMessage, onMessageSelected }: MessageReasse
   const [reassembledPayload, setReassembledPayload] = useState<string | null>(null);
 
   useEffect(() => {
+    // Always reset state when message changes
+    setReassembledPayload(null);
+    setFragmentStatus(null);
+    
     if (selectedMessage) {
       loadFragmentStatus();
       // Check if message already has decrypted payload
       if (selectedMessage.decrypted_payload) {
         setReassembledPayload(selectedMessage.decrypted_payload);
       }
-    } else {
-      setFragmentStatus(null);
-      setReassembledPayload(null);
     }
-  }, [selectedMessage]);
+  }, [selectedMessage?.bundle_id]); // Use bundle_id to detect actual message changes
 
   const loadFragmentStatus = async () => {
     if (!selectedMessage) return;
