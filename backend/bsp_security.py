@@ -96,7 +96,7 @@ class BSPSecurityManager:
     """
     
     # Shared secret key for demonstration
-    DEFAULT_KEY = b"iss-simulator-bsp-key-2025-secure"  # 32 bytes for AES-256
+    DEFAULT_KEY = b"iss-simulator-bsp-key-2025-secure"
     
     def __init__(self):
         self.backend = default_backend()
