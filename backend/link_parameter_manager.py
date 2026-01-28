@@ -18,10 +18,10 @@ class LinkParameterManager:
     # Speed of light in km/s
     SPEED_OF_LIGHT_KMPS = 299792.458
     
-    # Minimum viable bandwidth (when link is "down")
+    # Minimum viable bandwidth
     MIN_BANDWIDTH_MBPS = 0.001 # 1 kbps
     
-    # Maximum packet loss for completely broken link
+    # Maximum packet loss
     MAX_LOSS_PERCENT = 50.0
     
     def __init__(self):
@@ -44,24 +44,20 @@ class LinkParameterManager:
         Returns:
             Packet loss percentage (0-50)
         """
+        # Packet loss percentage based on SNR
         if snr_db < 0:
-            # Very poor signal - high packet loss
             loss = 30.0 + (abs(snr_db) / 10.0) * 20.0
             return min(loss, self.MAX_LOSS_PERCENT)
         elif snr_db < 3:
-            # Poor signal - high loss
             loss = 30.0 - (snr_db / 3.0) * 20.0
             return max(loss, 10.0)
         elif snr_db < 6:
-            # Moderate signal - moderate loss
             loss = 10.0 - ((snr_db - 3.0) / 3.0) * 5.0
             return max(loss, 5.0)
         elif snr_db < 10:
-            # Good signal - low loss
             loss = 5.0 - ((snr_db - 6.0) / 4.0) * 4.0
             return max(loss, 1.0)
         else:
-            # Excellent signal - very low loss
             if snr_db >= 20:
                 return 0.1
             loss = 1.0 - ((snr_db - 10.0) / 10.0) * 0.9
@@ -102,7 +98,6 @@ class LinkParameterManager:
         # Convert bps to Mbps
         bandwidth_mbps = data_rate_bps / 1_000_000.0
         
-        # Ensure minimum bandwidth
         return max(bandwidth_mbps, self.MIN_BANDWIDTH_MBPS)
     
     def snr_to_jitter(self, snr_db: float, base_delay_ms: float) -> float:
@@ -119,20 +114,16 @@ class LinkParameterManager:
         Returns:
             Jitter in milliseconds (±variation)
         """
+        # Jitter percentage based on SNR
         if snr_db < 0:
-            # Very poor signal - high jitter (20% of delay)
             jitter_percent = 0.20
         elif snr_db < 3:
-            # Poor signal - moderate jitter (15%)
             jitter_percent = 0.15
         elif snr_db < 6:
-            # Moderate signal - low jitter (10%)
             jitter_percent = 0.10
         elif snr_db < 10:
-            # Good signal - very low jitter (5%)
             jitter_percent = 0.05
         else:
-            # Excellent signal - minimal jitter (2%)
             jitter_percent = 0.02
         
         jitter_ms = base_delay_ms * jitter_percent

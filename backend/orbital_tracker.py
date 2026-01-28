@@ -181,13 +181,13 @@ class OrbitalTracker:
             topo_prev = difference.at(t_prev)
             alt_prev, _, _ = topo_prev.altaz()
             
-            # Found AOS: satellite was below threshold and is now above
+            # Found AOS
             if alt_prev.degrees <= min_elevation and alt_check.degrees > min_elevation:
-                # Found next pass!
+                # Found next pass
                 return cache_and_return({
                     "start_time": t_check.utc_iso(),
                     "minutes_until": int(minutes_ahead),
-                    "max_elevation": float(alt_check.degrees),  # Rough estimate
+                    "max_elevation": float(alt_check.degrees),
                     "azimuth": float(az_check.degrees)
                 })
         

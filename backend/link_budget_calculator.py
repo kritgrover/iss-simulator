@@ -10,18 +10,18 @@ class LinkBudgetCalculator:
     BOLTZMANN_CONSTANT = 1.380649e-23  # J/K
     
     # ISS Communication parameters
-    ISS_TRANSMIT_POWER_DBM = 43.0  # dBm
-    ISS_ANTENNA_GAIN_DBI = 12.0    # dBi
+    ISS_TRANSMIT_POWER_DBM = 37.0  # dBm
+    ISS_ANTENNA_GAIN_DBI = 6.0    # dBi
     GROUND_ANTENNA_GAIN_DBI = 18.0  # dBi
     SYSTEM_NOISE_TEMP_K = 125.0     # Kelvin
     
     # Frequency parameters (Amateur radio band)
-    DOWNLINK_FREQ_MHZ = 145.800  # MHz (ISS to Ground)
-    UPLINK_FREQ_MHZ = 145.200    # MHz (Ground to ISS - Region 1)
+    DOWNLINK_FREQ_MHZ = 145.800  # MHz
+    UPLINK_FREQ_MHZ = 145.200    # MHz
     
     # System parameters
-    CABLE_LOSS_DB = 2.0  # dB (coax cable losses)
-    MISC_LOSSES_DB = 3.0  # dB (connectors, weather, etc.)
+    CABLE_LOSS_DB = 2.0  # dB
+    MISC_LOSSES_DB = 3.0  # dB
 
     BANDWIDTH_HZ = 12500 # 12.5 kHz for amateur radio
      
@@ -45,7 +45,7 @@ class LinkBudgetCalculator:
         # Shannon capacity in bits/second
         capacity_bps = self.BANDWIDTH_HZ * math.log2(1 + snr_linear)
         
-        # Apply practical efficiency factor (70-80% of theoretical due to modulation overhead)
+        # Apply practical efficiency factor
         efficiency = 0.75
         practical_rate_bps = capacity_bps * efficiency
         
@@ -79,7 +79,7 @@ class LinkBudgetCalculator:
         path_length_factor = 1.0 / math.sin(elevation_rad) if elevation_rad > 0 else 10.0
         
         # Base atmospheric loss at zenith + path length scaling
-        base_loss = 0.5  # dB at 90° elevation
+        base_loss = 0.5  # dB
         atm_loss = base_loss * min(path_length_factor, 10.0)
         
         return float(atm_loss)
@@ -144,8 +144,6 @@ class LinkBudgetCalculator:
         snr_db = received_power_dbm - noise_floor_dbm
         
         # 6. Calculate Doppler shift using actual radial velocity
-        # For Doppler: positive velocity = red shift (positive Doppler)
-        #              negative velocity = blue shift (negative Doppler)
         doppler_khz = self.calculate_doppler_shift(radial_velocity_kmps, self.DOWNLINK_FREQ_MHZ)
         
         # 7. Calculate latency (speed of light delay)
