@@ -135,7 +135,8 @@ export interface OrbitalData {
 }
 
 export const useOrbitalTracking = () => {
-  const WS_URL = 'ws://localhost:8000/ws/orbital_tracking';
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const WS_URL = `${protocol}://${window.location.host}/iss-simulator/ws/orbital_tracking`;
   const { isConnected, lastMessage } = useWebSocket(WS_URL);
   
   const [orbitalData, setOrbitalData] = useState<OrbitalData | null>(null);
