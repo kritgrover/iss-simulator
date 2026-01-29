@@ -780,6 +780,12 @@ class DTNBundleManager:
                     print(f"   Total retry attempts: {transmission.retransmission_count}")
                     bundle.status = BundleStatus.EXPIRED
                     self._mark_bundle_failed(bundle_id, "contact_lost_max_retries")
+                    # Remove from sender queue so it doesn't linger indefinitely.
+                    if from_station and bundle_id in self.station_queues.get(from_station, []):
+                        self.station_queues[from_station].remove(bundle_id)
+                    # Clear any retry tracking for this bundle.
+                    if bundle_id in self.bundle_retry_counts:
+                        del self.bundle_retry_counts[bundle_id]
                 
                 del self.active_transmissions[transmission_key]
                 continue
@@ -1404,15 +1410,29 @@ class DTNBundleManager:
         """Get all bundles in a station's queue"""
         bundle_ids = self.station_queues.get(station_id, [])
         bundles = []
+        to_remove = []
         
         for bid in bundle_ids:
             if bid in self.bundles:
                 bundle = self.bundles[bid]
+                # Hide/prune bundles that are already in a terminal state (e.g., max retries exceeded).
+                if bundle.status in [BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
+                    to_remove.append(bid)
+                    continue
+
                 if not bundle.is_expired():
                     bundles.append(bundle.to_dict())
                 else:
                     # Mark as expired
                     bundle.status = BundleStatus.EXPIRED
+                    to_remove.append(bid)
+        
+        # Prune expired/delivered bundles from the station queue to avoid "stuck" entries.
+        if to_remove:
+            q = self.station_queues.get(station_id, [])
+            for bid in to_remove:
+                if bid in q:
+                    q.remove(bid)
         
         # Sort by priority (expedited first)
         priority_order = {"EXPEDITED": 0, "NORMAL": 1, "BULK": 2}
@@ -1879,13 +1899,25 @@ class DTNBundleManager:
     def get_iss_queue(self) -> List[Dict]:
         """Get all bundles in ISS queue"""
         bundles = []
+        to_remove = []
         for bid in self.iss_queue:
             if bid in self.bundles:
                 bundle = self.bundles[bid]
+                # Hide/prune bundles that are already in a terminal state (e.g., max retries exceeded).
+                if bundle.status in [BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
+                    to_remove.append(bid)
+                    continue
+
                 if not bundle.is_expired():
                     bundles.append(bundle.to_dict())
                 else:
                     bundle.status = BundleStatus.EXPIRED
+                    to_remove.append(bid)
+        
+        if to_remove:
+            for bid in to_remove:
+                if bid in self.iss_queue:
+                    self.iss_queue.remove(bid)
         
         priority_order = {"EXPEDITED": 0, "NORMAL": 1, "BULK": 2}
         bundles.sort(key=lambda b: priority_order.get(b["priority"], 99))

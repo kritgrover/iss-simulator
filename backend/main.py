@@ -278,15 +278,10 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             
             # Store retransmission info for bundles that need to be retransmitted
             retransmission_map = {}  # bundle_id -> (retry_count, data_rate_bps)
-            retransmitted_bundle_ids = []
             for retrans_info in retransmitted_bundles_info:
                 if isinstance(retrans_info, tuple) and len(retrans_info) == 3:
                     bundle_id, retry_count, data_rate_bps = retrans_info
                     retransmission_map[bundle_id] = (retry_count, data_rate_bps)
-                    retransmitted_bundle_ids.append(bundle_id)
-                else:
-                    # Backward compatibility
-                    retransmitted_bundle_ids.append(retrans_info)
             
             # Process ISS bundles first (if any visible station)
             if dtn_manager.iss_queue:
@@ -546,16 +541,13 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                         )
                         continue  # Don't check for other forwarding options
                     else:
-                        # Check if we are at the end of the route and destination is ISS (waiting for pass)
                         # If so, we are at the designated uplink station and should wait here
                         is_waiting_for_iss = (bundle_destination.upper() == "ISS" and 
                                               next_bundle.route and 
                                               next_bundle.route[-1] == station_id)
                         
                         if is_waiting_for_iss:
-                            # We are at the uplink station, just waiting for ISS pass
                             pass
-                        # Route exists but next hop is invalid (stale route) - clear it for recalculation
                         elif next_bundle.route and len(next_bundle.route) > 0:
                             print(f"⚠️  Route for bundle {next_bundle_id[:8]} is stale (next hop already visited or invalid), recalculating...")
                             next_bundle.route = []
