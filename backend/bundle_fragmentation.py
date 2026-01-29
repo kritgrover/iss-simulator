@@ -52,6 +52,7 @@ class BundleFragmentationManager:
     """
     
     # Maximum fragment size
+
     MAX_FRAGMENT_SIZE = 4096  # 4KB per fragment - adjust for testing
     FRAGMENT_HEADER_SIZE = 4094  # Estimated header overhead per fragment
     
