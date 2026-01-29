@@ -35,10 +35,10 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 class ISSTopology:
     """Manages Mininet topology for ISS and ground stations"""
     
-    # Ground link parameters (terrestrial fiber/backbone)
+    # Ground link parameters
     GROUND_BANDWIDTH_MBPS = 100  # 100 Mbps
     GROUND_DELAY_MS = 50  # 50ms base delay
-    GROUND_LOSS_PERCENT = 20  # 20% packet loss
+    GROUND_LOSS_PERCENT = 10  # 10% packet loss
     
     # Base ISS link parameters (will be updated dynamically)
     ISS_BASE_BANDWIDTH_MBPS = 0.2  # 200 kbps
@@ -161,7 +161,6 @@ class ISSTopology:
                 self.switch.cmd('ovs-vsctl del-controller', self.switch.name)
                 info("✅ Configured {} to run in standalone mode\n".format(self.switch.name))
             except Exception as e:
-                # If ovs-vsctl commands fail, switch might still work
                 info("⚠️  Could not configure standalone mode (may still work): {}\n".format(e))
         
         # Give network a moment to fully initialize interfaces
@@ -205,7 +204,7 @@ class ISSTopology:
             return
         
         if not self.net or not hasattr(self.net, 'running') or not self.net.running:
-            # Network not running yet, just store parameters
+            # Network not running yet, store parameters
             self.iss_links[station_id] = {
                 'bandwidth_mbps': bandwidth_mbps,
                 'delay_ms': delay_ms,
@@ -215,11 +214,11 @@ class ISSTopology:
             return
         
         if station_id in self.iss_links:
-            # Update existing link parameters
+            # Update link parameters
             self.update_iss_link(station_id, bandwidth_mbps, delay_ms, loss_percent)
             return
         
-        # Store link info
+        # Store link parameters
         self.iss_links[station_id] = {
             'bandwidth_mbps': bandwidth_mbps,
             'delay_ms': delay_ms,
@@ -346,17 +345,6 @@ class ISSTopology:
             return None
         return None
     
-    def ping_test(self, source: str, target: str) -> bool:
-        """Test connectivity between two nodes"""
-        source_node = self.get_node(source)
-        target_node = self.get_node(target)
-        
-        if not source_node or not target_node:
-            return False
-        
-        result = source_node.cmd('ping -c 1 {}'.format(target_node.IP()))
-        return '1 received' in result
-    
     def get_mesh_connections(self) -> List[Tuple[str, str]]:
         """Get list of ground station mesh connections"""
         return self.mesh_connections
@@ -367,27 +355,4 @@ def create_topology(ground_stations: List[Dict]) -> ISSTopology:
     topology = ISSTopology(ground_stations)
     topology.build()
     return topology
-
-
-if __name__ == '__main__':
-    # Test topology
-    test_stations = [
-        {"id": "toronto", "name": "Toronto", "lat": 43.6532, "lon": -79.3832},
-        {"id": "london", "name": "London", "lat": 51.5074, "lon": -0.1278},
-        {"id": "tokyo", "name": "Tokyo", "lat": 35.6762, "lon": 139.6503},
-    ]
-    
-    topo = create_topology(test_stations)
-    topo.start()
-    
-    try:
-        # Test ping
-        print("Testing connectivity...")
-        print("ISS -> Toronto:", topo.ping_test('iss', 'toronto'))
-        print("Toronto -> London:", topo.ping_test('toronto', 'london'))
-        
-        from mininet.cli import CLI
-        CLI(topo.net)
-    finally:
-        topo.stop()
 

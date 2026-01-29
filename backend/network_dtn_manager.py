@@ -150,191 +150,6 @@ class NetworkDTNManager(DTNBundleManager):
         except Exception as e:
             print("❌ Failed to start server for {}: {}".format(node_id, e))
     
-    def _receive_message(self, sock: socket.socket) -> Optional[Dict]:
-        """Receive a message from socket"""
-        try:
-            length_data = sock.recv(4)
-            if len(length_data) < 4:
-                return None
-            
-            message_length = struct.unpack('>I', length_data)[0]
-            
-            # Read message data
-            message_data = b''
-            while len(message_data) < message_length:
-                chunk = sock.recv(message_length - len(message_data))
-                if not chunk:
-                    return None
-                message_data += chunk
-            
-            # Parse JSON message
-            message = json.loads(message_data.decode('utf-8'))
-            return message
-        except Exception as e:
-            print("❌ Error receiving message: {}".format(e))
-            return None
-    
-    def _send_message(self, sock: socket.socket, message: Dict) -> bool:
-        """Send a message over socket"""
-        try:
-            # Serialize message
-            message_json = json.dumps(message).encode('utf-8')
-            message_length = len(message_json)
-            
-            # Send length + message
-            sock.sendall(struct.pack('>I', message_length))
-            sock.sendall(message_json)
-            
-            return True
-        except Exception as e:
-            print("❌ Error sending message: {}".format(e))
-            return False
-    
-    def _process_message(self, node_id: str, message: Dict, client_socket: socket.socket):
-        """Process received message"""
-        msg_type = message.get('type')
-        
-        if msg_type == 'bundle':
-            # Received a bundle
-            self._handle_bundle_received(node_id, message, client_socket)
-        elif msg_type == 'ack':
-            # Received an ACK
-            self._handle_ack_received(node_id, message)
-        elif msg_type == 'nak':
-            # Received a NAK
-            self._handle_nak_received(node_id, message)
-    
-    def _handle_bundle_received(self, node_id: str, message: Dict, client_socket: socket.socket):
-        """Handle received bundle"""
-        bundle_data = message.get('bundle')
-        if not bundle_data:
-            return
-        
-        # Reconstruct bundle
-        bundle_id = bundle_data.get('bundle_id')
-        payload = bundle_data.get('payload')
-        checksum = bundle_data.get('checksum')
-        source_station = bundle_data.get('source_station')
-        destination_station = bundle_data.get('destination_station', 'iss')
-        priority = bundle_data.get('priority', 'NORMAL')
-        
-        # Verify checksum (on encrypted payload)
-        import zlib
-        encrypted_payload = bundle_data.get('encrypted_payload', payload)
-        calculated_checksum = zlib.crc32(encrypted_payload.encode('utf-8')) & 0xffffffff
-        
-        if calculated_checksum != checksum:
-            # Checksum mismatch - send NAK
-            print("❌ Checksum mismatch for bundle {} at {}".format(
-                bundle_id[:8], node_id
-            ))
-            nak_message = {
-                'type': 'nak',
-                'bundle_id': bundle_id,
-                'reason': 'checksum_mismatch',
-                'expected_checksum': checksum,
-                'received_checksum': calculated_checksum
-            }
-            self._send_message(client_socket, nak_message)
-            return
-        
-        # Checksum valid - create bundle object at receiver if it doesn't exist
-        # Bundle will be added to receiver's queue when ACK is processed at sender side
-        if bundle_id not in self.bundles:
-            from dtn_bundle_manager import DTNBundle, BundlePriority
-            priority_enum = BundlePriority.NORMAL
-            if priority.upper() == "EXPEDITED":
-                priority_enum = BundlePriority.EXPEDITED
-            elif priority.upper() == "BULK":
-                priority_enum = BundlePriority.BULK
-            
-            # Handle encrypted payload (new format) or plaintext (legacy)
-            encrypted_payload = bundle_data.get('encrypted_payload', payload)
-            payload_hash = bundle_data.get('payload_hash')
-            
-            # If payload is not encrypted, it should have been encrypted by sender
-            # For network received bundles, assume payload is already encrypted
-            if not payload_hash:
-                import hashlib
-                payload_hash = hashlib.sha256(encrypted_payload.encode('utf-8')).hexdigest()
-            
-            # Reconstruct security blocks from received data
-            pcb = None
-            pib = None
-            bab = None
-            
-            pcb_data = bundle_data.get('pcb')
-            if pcb_data:
-                from bsp_security import PayloadConfidentialityBlock
-                if isinstance(pcb_data, str):
-                    pcb_data = json.loads(pcb_data)
-                pcb = PayloadConfidentialityBlock(
-                    security_target=pcb_data.get('security_target', 'payload'),
-                    security_source=pcb_data.get('security_source', ''),
-                    encryption_method=pcb_data.get('encryption_method', 'AES-256-CBC'),
-                    key_id=pcb_data.get('key_id', ''),
-                    iv=pcb_data.get('iv', '')
-                )
-            
-            pib_data = bundle_data.get('pib')
-            if pib_data:
-                from bsp_security import PayloadIntegrityBlock
-                if isinstance(pib_data, str):
-                    pib_data = json.loads(pib_data)
-                pib = PayloadIntegrityBlock(
-                    security_target=pib_data.get('security_target', 'payload'),
-                    security_source=pib_data.get('security_source', ''),
-                    signature=pib_data.get('signature', ''),
-                    signer=pib_data.get('signer', '')
-                )
-            
-            bab_data = bundle_data.get('bab')
-            if bab_data:
-                from bsp_security import BundleAuthenticationBlock
-                if isinstance(bab_data, str):
-                    bab_data = json.loads(bab_data)
-                bab = BundleAuthenticationBlock(
-                    security_target=bab_data.get('security_target', ''),
-                    security_source=bab_data.get('security_source', ''),
-                    mac=bab_data.get('mac', ''),
-                    key_id=bab_data.get('key_id', '')
-                )
-            
-            bundle = DTNBundle(
-                bundle_id=bundle_id,
-                source_station=source_station,
-                destination_station=destination_station,
-                encrypted_payload=encrypted_payload,
-                payload_hash=payload_hash,
-                priority=priority_enum,
-                created_at=datetime.now(timezone.utc),
-                ttl_hours=24,  # Default TTL
-                current_custodian=node_id,  
-                hops=[source_station],  # Start with source station, will be updated when ACK processed
-                pcb=pcb,
-                pib=pib,
-                bab=bab
-            )
-            self.bundles[bundle_id] = bundle
-            
-            # Save to DB
-            self.db_manager.save_bundle(bundle.to_dict())
-            
-            print("📦 Bundle {} created at receiver {} (will be queued when ACK processed)".format(
-                bundle_id[:8], node_id
-            ))
-        
-        # Send ACK
-        print("✅ Bundle {} received and verified at {}".format(
-            bundle_id[:8], node_id
-        ))
-        ack_message = {
-            'type': 'ack',
-            'bundle_id': bundle_id,
-            'checksum': checksum
-        }
-        self._send_message(client_socket, ack_message)
-    
     def _handle_ack_received(self, node_id: str, message: Dict):
         """Handle received ACK"""
         bundle_id = message.get('bundle_id')
@@ -343,10 +158,10 @@ class NetworkDTNManager(DTNBundleManager):
             return
         
         bundle = self.bundles[bundle_id]
-        # Capture sender (current custodian) before process_ack updates it
+        # Capture sender before process_ack updates it
         sender_station = bundle.current_custodian
         
-        # Check if this is the final destination (ISS or the target ground station)
+        # Check if this is the final destination
         is_final_destination = (
             node_id.lower() == 'iss' or 
             node_id.lower() == bundle.destination_station.lower()
@@ -687,8 +502,6 @@ class NetworkDTNManager(DTNBundleManager):
                 
                 if success:
                     transmission.bytes_transmitted = transmission.size_bytes
-                else:
-                    pass
             
             thread = threading.Thread(target=send_thread)
             thread.daemon = True
@@ -806,8 +619,6 @@ class NetworkDTNManager(DTNBundleManager):
                                 # Remove from queue
                                 if bundle_id in self.station_queues.get(transmission.from_station, []):
                                     self.station_queues[transmission.from_station].remove(bundle_id)
-                    else:
-                        pass
                 else:
                     elapsed = (datetime.now(timezone.utc) - transmission.started_at).total_seconds()
                     print(f"✅ Transmission COMPLETE: {bundle_id[:8]}")

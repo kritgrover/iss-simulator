@@ -13,11 +13,6 @@ import sys
 import os
 import zlib
 
-# Add parent directory to path to import DTN modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-from dtn_bundle_manager import DTNBundle
-
 DTN_PORT = 5000
 
 
