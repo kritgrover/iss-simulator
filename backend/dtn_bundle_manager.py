@@ -567,7 +567,6 @@ class DTNBundleManager:
                 
                 # Return the first fragment bundle (for API compatibility)
                 bundle = fragment_bundles[0]
-                print(f"   Created {fragment_count} fragment bundles (IDs: {', '.join([f[:8] for f in [fb.bundle_id for fb in fragment_bundles]])})")
             else:
                 # Step 4: Create bundle (non-fragmented)
                 bundle = DTNBundle(
