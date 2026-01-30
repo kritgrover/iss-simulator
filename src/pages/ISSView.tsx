@@ -1,5 +1,4 @@
 import { useOrbitalTracking } from '@/hooks/useOrbitalTracking';
-import Header from "@/components/Header";
 import ISSEarthView from "@/components/iss/ISSEarthView";
 import MessageInbox from "@/components/iss/MessageInbox";
 import MessageReassembly from "@/components/iss/MessageReassembly";
