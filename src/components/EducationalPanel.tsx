@@ -36,21 +36,21 @@ const referenceData: ReferenceItem[] = [
     id: "dtn-2",
     title: "Bundle Structure",
     category: "dtn",
-    content: "A bundle consists of: Primary Block (routing info), Payload Block (data), and optional Extension Blocks (metadata). Each bundle has a unique identifier and lifetime.",
-    keywords: ["bundle", "structure", "primary", "payload", "block"],
+    content: "A bundle consists of: Primary Block (routing info), Payload Block (data), and optional Extension Blocks (e.g. BPSec security blocks: PCB, PIB, BAB). Each bundle has a unique identifier and lifetime. This simulator uses encrypted payloads with confidentiality (PCB), integrity (PIB), and authentication (BAB).",
+    keywords: ["bundle", "structure", "primary", "payload", "block", "pcb", "pib", "bab"],
   },
   {
     id: "dtn-3",
     title: "Custody Transfer",
     category: "dtn",
-    content: "Custody transfer ensures reliable delivery by transferring responsibility for a bundle from one node to another. The receiving node acknowledges custody acceptance.",
+    content: "Custody transfer ensures reliable delivery by transferring responsibility for a bundle from one node to another. The receiving node sends acknowledgments: custody accepted when it takes responsibility, and delivered when the bundle reaches its final destination. This simulator uses both ack types.",
     keywords: ["custody", "transfer", "reliable", "acknowledgment"],
   },
   {
     id: "dtn-4",
     title: "Bundle Lifetime",
     category: "dtn",
-    content: "Each bundle has a lifetime (TTL) that prevents infinite storage. If a bundle expires before delivery, it is discarded. Lifetime is typically set based on expected network delays.",
+    content: "Each bundle has a lifetime (TTL) that prevents infinite storage. If a bundle expires before delivery, it is discarded. In this simulator, the default TTL is 24 hours (configurable when creating a bundle).",
     keywords: ["lifetime", "ttl", "expiration", "time"],
   },
   
@@ -89,8 +89,8 @@ const referenceData: ReferenceItem[] = [
     id: "link-1",
     title: "Free Space Path Loss",
     category: "link-budget",
-    content: "Free space path loss (FSPL) calculates signal attenuation in vacuum. It increases with distance and frequency.",
-    formula: "FSPL = 20 × log₁₀(d) + 20 × log₁₀(f) + 32.44\nwhere d = distance (km), f = frequency (MHz)",
+    content: "Free space path loss (FSPL) calculates signal attenuation in vacuum. It increases with distance and frequency. This simulator uses the same formula (constant 32.45) in link budget calculations.",
+    formula: "FSPL = 20 × log₁₀(d) + 20 × log₁₀(f) + 32.45\nwhere d = distance (km), f = frequency (MHz)",
     keywords: ["path", "loss", "free", "space", "attenuation"],
   },
   {
@@ -130,8 +130,8 @@ const referenceData: ReferenceItem[] = [
     id: "orbital-2",
     title: "Two-Line Element (TLE)",
     category: "orbital",
-    content: "TLE format encodes orbital elements: inclination, right ascension, eccentricity, argument of perigee, mean anomaly, and mean motion. Updated regularly for accurate predictions.",
-    keywords: ["tle", "elements", "inclination", "eccentricity", "anomaly"],
+    content: "TLE format encodes orbital elements: inclination, right ascension, eccentricity, argument of perigee, mean anomaly, and mean motion. This simulator fetches ISS (ZARYA) TLE from CelesTrak and uses SGP4 propagation for position and pass predictions.",
+    keywords: ["tle", "elements", "inclination", "eccentricity", "anomaly", "celestrak", "sgp4"],
   },
   {
     id: "orbital-3",
@@ -276,14 +276,14 @@ const EducationalPanel = () => {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Bundle routing in DTN differs fundamentally from Internet routing. Instead of finding a path at transmission time, DTN routing plans paths through a series of contacts (connection opportunities).
+                      Bundle routing in DTN differs fundamentally from Internet routing. Instead of finding a path at transmission time, DTN routing plans paths through a series of contacts (connection opportunities). In this simulator, routes use <strong>real-time ISS visibility and next-pass predictions</strong> over a mesh of ground stations (see &quot;Routing in This Simulator&quot; below).
                     </p>
                     
                     <div className="space-y-4">
                       <div>
                         <h4 className="font-semibold text-sm mb-2">1. Contact Planning</h4>
                         <p className="text-sm text-muted-foreground mb-2">
-                          The routing system maintains a <strong>contact graph</strong> that represents scheduled connection opportunities between nodes. Each contact has:
+                          Routing systems may use a <strong>contact graph</strong> of scheduled connection opportunities, or (as here) <strong>live visibility and next-pass times</strong>. Each contact or opportunity has:
                         </p>
                         <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-4">
                           <li>Start time and duration</li>
@@ -330,28 +330,22 @@ const EducationalPanel = () => {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Routing Algorithms</CardTitle>
+                    <CardTitle>Routing in This Simulator</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <h4 className="font-semibold text-sm mb-2">Contact Graph Routing (CGR)</h4>
+                      <h4 className="font-semibold text-sm mb-2">Mesh-Based Routing with Next-Pass Preference</h4>
                       <p className="text-sm text-muted-foreground mb-2">
-                        <strong>Used in this simulator.</strong> CGR is designed for space networks with predictable contacts. It:
+                        <strong>Used in this simulator.</strong> Routing uses a mesh of ground stations and breadth-first search (BFS), with preferences based on visibility and pass times:
                       </p>
                       <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-4">
-                        <li>Builds a graph from scheduled contacts</li>
-                        <li>Computes shortest-delay paths using Dijkstra's algorithm</li>
-                        <li>Considers contact capacity and bundle sizes</li>
-                        <li>Is deterministic and predictable</li>
+                        <li>Builds routes from mesh connections between ground stations (and ISS)</li>
+                        <li>When the ISS is the source, prefers the station with highest elevation if visible, or soonest next pass otherwise</li>
+                        <li>When routing to the ISS, prefers stations currently in view, or with the soonest upcoming pass</li>
+                        <li>Uses BFS to find paths through the mesh, ordering neighbors by next-pass time</li>
                       </ul>
                     </div>
 
-                    <div>
-                      <h4 className="font-semibold text-sm mb-2">Other Algorithms</h4>
-                      <p className="text-sm text-muted-foreground">
-                        See the Reference section for details on Epidemic Routing, Spray and Wait, and PROPHET algorithms used in ad-hoc and opportunistic networks.
-                      </p>
-                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -402,20 +396,32 @@ const EducationalPanel = () => {
                       </div>
 
                       <div>
-                        <h4 className="font-semibold text-sm mb-2">ISS Link Budget Example</h4>
+                        <h4 className="font-semibold text-sm mb-2">ISS Link Budget Example (This Simulator)</h4>
                         <div className="bg-muted p-3 rounded text-sm font-mono space-y-1">
-                          <div>Transmit Power: 5 W = 37 dBm</div>
-                          <div>Transmit Antenna Gain: 12 dBi</div>
-                          <div>Receive Antenna Gain: 40 dBi</div>
-                          <div>Distance: 400 km</div>
-                          <div>Frequency: 2.4 GHz</div>
+                          <div>Transmit Power (ISS): 37 dBm</div>
+                          <div>ISS Antenna Gain: 6 dBi</div>
+                          <div>Ground Antenna Gain: 18 dBi</div>
+                          <div>Distance: ~400 km (typical ISS altitude)</div>
+                          <div>Frequency: 145.8 MHz (VHF amateur downlink)</div>
                           <div className="pt-2 border-t border-border">
-                            Path Loss: ~152 dB<br/>
-                            Received Power: ~-63 dBm<br/>
-                            Noise Floor: ~-101 dBm<br/>
-                            <strong>SNR: ~38 dB</strong>
+                            Path Loss: ~128 dB<br/>
+                            Received Power: ~-72 dBm (after cable/misc losses)<br/>
+                            Noise Floor: ~-108 dBm (12.5 kHz, 125 K)<br/>
+                            <strong>SNR: ~35–40 dB</strong>
                           </div>
                         </div>
+                      </div>
+
+                      <div>
+                        <h4 className="font-semibold text-sm mb-2">Connection States (This Simulator)</h4>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Link quality maps to three states based on SNR and elevation:
+                        </p>
+                        <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-4 mb-4">
+                          <li><strong>ACQUIRED:</strong> SNR ≥ 10 dB and above horizon — reliable link</li>
+                          <li><strong>DEGRADED:</strong> SNR ≥ 3 dB and above horizon — marginal link</li>
+                          <li><strong>IDLE:</strong> SNR &lt; 3 dB or below horizon — no usable link</li>
+                        </ul>
                       </div>
 
                       <div>
@@ -475,7 +481,7 @@ const EducationalPanel = () => {
                           <li>Typical ground station contact: 5-10 minutes</li>
                           <li>Handoffs occur every 5-15 minutes depending on station spacing</li>
                           <li>DTN handles handoffs gracefully by storing bundles during gaps</li>
-                          <li>Multiple stations may be visible simultaneously, enabling mesh networking</li>
+                          <li>Multiple stations may be visible simultaneously; this simulator selects a single <strong>active station</strong> at a time (the one with highest elevation when visible)</li>
                         </ul>
                       </div>
 
@@ -544,6 +550,9 @@ const EducationalPanel = () => {
 
                       <div>
                         <h4 className="font-semibold text-sm mb-2">Convergence Layers</h4>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Standard DTN convergence layers include TCPCL, LTP, and UDP. <strong>This simulator does not implement a specific convergence layer;</strong> it models bundle transmission using data rate and one-way latency derived from the link budget (Shannon capacity and speed-of-light delay).
+                        </p>
                         <div className="space-y-2 text-sm text-muted-foreground">
                           <div>
                             <strong>TCP Convergence Layer (TCPCL):</strong> Uses TCP for reliable delivery. Good for ground networks and stable links.
@@ -559,9 +568,14 @@ const EducationalPanel = () => {
 
                       <div>
                         <h4 className="font-semibold text-sm mb-2">Security (BPSec)</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Bundle Protocol Security (BPSec) provides end-to-end security through security blocks that can provide integrity, confidentiality, and authentication services for bundles.
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Bundle Protocol Security (BPSec) provides end-to-end security through security blocks. This simulator implements:
                         </p>
+                        <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground ml-4">
+                          <li><strong>PCB (Payload Confidentiality Block):</strong> Encrypts payload; only the destination can decrypt</li>
+                          <li><strong>PIB (Payload Integrity Block):</strong> Signature over payload hash so tampering can be detected</li>
+                          <li><strong>BAB (Bundle Authentication Block):</strong> MAC for authenticity between nodes</li>
+                        </ul>
                       </div>
                     </div>
                   </CardContent>
@@ -570,53 +584,6 @@ const EducationalPanel = () => {
             </Tabs>
           </div>
         </ScrollArea>
-
-        {/* Reference Section */}
-        <div className="border-t p-6 bg-muted/30 flex-shrink-0">
-          <div className="flex items-center gap-2 mb-4">
-            <Search className="w-5 h-5" />
-            <h3 className="text-lg font-semibold">Searchable Reference</h3>
-          </div>
-          <Input
-            placeholder="Search DTN Bundle Protocol, routing algorithms, link budget formulas, orbital mechanics..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="mb-4"
-          />
-          <ScrollArea className="h-[200px]">
-            <div className="space-y-3 pr-4">
-              {filteredReferences.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No results found. Try different keywords.
-                </p>
-              ) : (
-                filteredReferences.map((item) => (
-                  <Card key={item.id}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-base">{item.title}</CardTitle>
-                        <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
-                          {item.category === "dtn" && "DTN"}
-                          {item.category === "routing" && "Routing"}
-                          {item.category === "link-budget" && "Link Budget"}
-                          {item.category === "orbital" && "Orbital"}
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground mb-2">{item.content}</p>
-                      {item.formula && (
-                        <div className="mt-3 p-3 bg-muted rounded font-mono text-xs whitespace-pre-wrap">
-                          {item.formula}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </div>
       </SheetContent>
     </Sheet>
   );
