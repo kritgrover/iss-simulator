@@ -106,7 +106,7 @@ const Index = () => {
         />
         
         {/* Floating Orbital Parameters and Ground Station Status */}
-        <div className="absolute top-4 right-4 bottom-4 md:bottom-auto z-20 w-full md:w-80 space-y-4 flex flex-col md:block overflow-y-auto">
+        <div className="absolute top-4 right-4 bottom-4 md:bottom-auto z-0 w-full md:w-80 space-y-4 flex flex-col md:block overflow-y-auto">
           <div 
             className="rounded-lg transition-all duration-300 [&>*]:bg-transparent [&>*]:border-0 flex-shrink-0"
             style={{

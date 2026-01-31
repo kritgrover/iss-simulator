@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Same host logic as useOrbitalTracking: DEV → hostname:8000, else current host
+const getApiBaseUrl = () => {
+  const host = import.meta.env.DEV ? `${window.location.hostname}:8000` : window.location.host;
+  return `${window.location.protocol}//${host}`;
+};
+const API_BASE_URL = getApiBaseUrl();
 
 export interface ISSFragment {
   fragment_number: number;

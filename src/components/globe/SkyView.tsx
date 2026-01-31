@@ -18,19 +18,14 @@ const SkyView = ({
   // Multiple stream sources to try
   const streamSources = [
     {
-      name: "NASA Live Stream",
-      url: "https://www.youtube.com/embed/iYmvCUonukw?autoplay=1&mute=1",
-      description: "High definition Earth view from ISS"
-    },
-    {
       name: "Sen 4K Live",
       url: "https://www.youtube.com/embed/fO9e9jnhYK8?autoplay=1&mute=1",
       description: "24/7 ISS live feed"
     },
     {
-      name: "ISS Live Streaming",
-      url: "https://www.youtube.com/embed/Ra2CBPw1TOY?autoplay=1&mute=0",
-      description: "24/7 ISS live feed"
+      name: "NASA Live Stream",
+      url: "https://www.youtube.com/embed/aB1yRz0HhdY?si=pPpU6wZOeo7pfqmF?autoplay=1&mute=1",
+      description: "High definition Earth view from ISS"
     }
   ];
 

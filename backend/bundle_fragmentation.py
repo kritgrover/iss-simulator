@@ -51,9 +51,10 @@ class BundleFragmentationManager:
     Fragments bundles that exceed maximum transmission unit (MTU) size.
     """
     
-    # Maximum fragment size (including headers)
-    MAX_FRAGMENT_SIZE = 4096  # 4KB per fragment (including headers) - adjust for testing
-    FRAGMENT_HEADER_SIZE = 256  # Estimated header overhead per fragment
+    # Maximum fragment size
+
+    MAX_FRAGMENT_SIZE = 2048  # 4KB per fragment - adjust for testing
+    FRAGMENT_HEADER_SIZE = 1000  # Estimated header overhead per fragment
     
     def __init__(self):
         self.fragments: Dict[str, List[BundleFragment]] = {}  # parent_bundle_id -> fragments
@@ -84,7 +85,8 @@ class BundleFragmentationManager:
         for i in range(total_fragments):
             offset = i * max_payload_per_fragment
             fragment_payload_bytes = payload_bytes[offset:offset + max_payload_per_fragment]
-            fragment_payload = fragment_payload_bytes.decode('utf-8', errors='ignore')
+            # Base64-encoded payloads are ASCII-safe, so decoding should never fail
+            fragment_payload = fragment_payload_bytes.decode('ascii')
             
             fragment_id = f"{bundle_id}-frag-{i}"
             
@@ -107,75 +109,3 @@ class BundleFragmentationManager:
         self.fragments[bundle_id] = fragments
         
         return fragments
-    
-    def add_fragment(self, fragment: BundleFragment) -> bool:
-        """
-        Add a received fragment to reassembly buffer
-        Returns True if all fragments are received and bundle can be reassembled
-        """
-        parent_id = fragment.parent_bundle_id
-        
-        if parent_id not in self.reassembly_buffers:
-            self.reassembly_buffers[parent_id] = {}
-        
-        self.reassembly_buffers[parent_id][fragment.fragment_number] = fragment
-        
-        # Check if all fragments are received
-        if parent_id in self.fragments:
-            expected_fragments = len(self.fragments[parent_id])
-            received_fragments = len(self.reassembly_buffers[parent_id])
-            
-            return received_fragments == expected_fragments
-        
-        # If we don't know total fragments, check if we have first and last
-        buffer = self.reassembly_buffers[parent_id]
-        if fragment.is_first and fragment.is_last:
-            # Single fragment bundle
-            return True
-        
-        if fragment.is_first in buffer and fragment.is_last in buffer:
-            first_frag = buffer[fragment.is_first]
-            last_frag = buffer[fragment.is_last]
-            expected_total = last_frag.total_fragments
-            return len(buffer) == expected_total
-        
-        return False
-    
-    def reassemble_bundle(self, parent_bundle_id: str) -> Optional[str]:
-        """
-        Reassemble fragments into original encrypted payload
-        Returns reassembled encrypted payload string, or None if incomplete
-        """
-        if parent_bundle_id not in self.reassembly_buffers:
-            return None
-        
-        buffer = self.reassembly_buffers[parent_bundle_id]
-        
-        # Sort fragments by fragment number
-        sorted_fragments = sorted(buffer.values(), key=lambda f: f.fragment_number)
-        
-        # Check if we have all fragments
-        if parent_bundle_id in self.fragments:
-            expected_count = len(self.fragments[parent_bundle_id])
-            if len(sorted_fragments) != expected_count:
-                return None
-        else:
-            # Check continuity
-            for i, frag in enumerate(sorted_fragments):
-                if frag.fragment_number != i:
-                    return None
-        
-        # Reassemble payload
-        payload_parts = []
-        for fragment in sorted_fragments:
-            payload_parts.append(fragment.payload)
-        
-        reassembled = ''.join(payload_parts)
-        
-        # Clean up
-        del self.reassembly_buffers[parent_bundle_id]
-        if parent_bundle_id in self.fragments:
-            del self.fragments[parent_bundle_id]
-        
-        return reassembled
-

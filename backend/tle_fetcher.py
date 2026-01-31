@@ -1,5 +1,5 @@
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 class TLEFetcher:
@@ -25,7 +25,7 @@ class TLEFetcher:
             for i in range(0, len(lines)-2, 3):
                 if 'ISS (ZARYA)' in lines[i]:
                     self.tle_lines = (lines[i].strip(), lines[i+1].strip(), lines[i+2].strip())
-                    self.last_fetch = datetime.utcnow()
+                    self.last_fetch = datetime.now(timezone.utc)
                     
                     # Cache to file
                     with open(self.cache_file, 'w') as f:
@@ -52,7 +52,7 @@ class TLEFetcher:
                     cache_time = datetime.fromisoformat(lines[0].strip())
                     
                     # Check if cache is still valid
-                    age = datetime.utcnow() - cache_time
+                    age = datetime.now(timezone.utc) - cache_time
                     if age < timedelta(hours=self.cache_hours):
                         self.tle_lines = (lines[1].strip(), lines[2].strip(), lines[3].strip())
                         self.last_fetch = cache_time
@@ -72,7 +72,7 @@ class TLEFetcher:
             return self.fetch_tle()
         
         if self.last_fetch:
-            age = datetime.utcnow() - self.last_fetch
+            age = datetime.now(timezone.utc) - self.last_fetch
             if age > timedelta(hours=self.cache_hours):
                 print(f"⏰ TLE cache expired, fetching fresh data...")
                 return self.fetch_tle()

@@ -96,7 +96,7 @@ class BSPSecurityManager:
     """
     
     # Shared secret key for demonstration
-    DEFAULT_KEY = b"iss-simulator-bsp-key-2025-secure"  # 32 bytes for AES-256
+    DEFAULT_KEY = b"iss-simulator-bsp-key-2025-secure"
     
     def __init__(self):
         self.backend = default_backend()
@@ -249,7 +249,6 @@ class BSPSecurityManager:
             payload_hash = bundle_data.get("payload_hash", "")
             if not payload_hash:
                 print(f"⚠️  BAB verification: payload_hash is missing from bundle_data")
-                print(f"   Available keys: {list(bundle_data.keys())}")
             
             message_dict = {
                 "bundle_id": bundle_data.get("bundle_id"),
@@ -265,16 +264,6 @@ class BSPSecurityManager:
             key = self._derive_key(bab.security_source)
             expected_mac_bytes = hmac.new(key, message, hashlib.sha256).digest()
             expected_mac = base64.b64encode(expected_mac_bytes).decode('utf-8')
-            
-            # Debug: Print comparison details
-            if bab.mac != expected_mac:
-                print(f"⚠️  BAB MAC mismatch:")
-                print(f"   Bundle ID: {bundle_data.get('bundle_id', 'unknown')[:8]}")
-                print(f"   From: {from_station}, To: {to_station}")
-                print(f"   BAB security_source: {bab.security_source}")
-                print(f"   Expected MAC: {expected_mac[:16]}...")
-                print(f"   Received MAC: {bab.mac[:16]}...")
-                print(f"   Message used: {message.decode('utf-8')[:200]}...")
             
             # Constant-time comparison to prevent timing attacks
             return hmac.compare_digest(bab.mac, expected_mac)

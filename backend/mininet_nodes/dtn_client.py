@@ -12,8 +12,6 @@ import sys
 import os
 import zlib
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 DTN_PORT = 5000
 
 

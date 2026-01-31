@@ -1,7 +1,7 @@
 import uuid
 import zlib
-import hashlib
 import json
+from collections import deque
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
@@ -65,11 +65,7 @@ class DTNBundle:
     def calculate_checksum(self) -> int:
         """Calculate CRC32 checksum of encrypted bundle payload"""
         data = self.encrypted_payload.encode('utf-8')
-        return zlib.crc32(data) & 0xffffffff  # Ensure non-negative 32-bit
-    
-    def verify_checksum(self, received_checksum: int) -> bool:
-        """Verify if received checksum matches calculated checksum"""
-        return self.checksum == received_checksum
+        return zlib.crc32(data) & 0xffffffff
     
     def is_expired(self) -> bool:
         """Check if bundle has exceeded TTL"""
@@ -229,7 +225,6 @@ class DTNBundleManager:
                 
                 if not encrypted_payload:
                     # Legacy bundle - payload is plaintext, need to encrypt it
-                    # This shouldn't happen in normal operation, but handle gracefully
                     plaintext = bundle_data.get('payload', '')
                     if plaintext and not plaintext.startswith('encrypted:'):
                         # Encrypt legacy payload
@@ -286,7 +281,7 @@ class DTNBundleManager:
                     source_station=bundle_data['source_station'],
                     destination_station=bundle_data['destination_station'],
                     encrypted_payload=encrypted_payload,
-                    payload_hash=payload_hash or self.bsp_security.get_payload_hash(encrypted_payload) if encrypted_payload else "",
+                    payload_hash=payload_hash or (self.bsp_security.get_payload_hash(encrypted_payload) if encrypted_payload else ""),
                     priority=priority_enum,
                     created_at=created_at,
                     ttl_hours=bundle_data['ttl_hours'],
@@ -403,8 +398,17 @@ class DTNBundleManager:
             if route_from_first:
                 return ["ISS"] + route_from_first
             else:
-                # Direct route if no mesh route found
-                return ["ISS", first_hop, to_station] if first_hop != to_station else ["ISS", to_station]
+                # No mesh route found - check if direct forwarding is possible
+                if first_hop == to_station:
+                    return ["ISS", to_station]
+                
+                # Verify stations are mesh neighbors before returning fallback route
+                neighbors = self.get_neighbors(first_hop) if hasattr(self, 'get_neighbors') else []
+                if to_station in neighbors:
+                    return ["ISS", first_hop, to_station]
+                else:
+                    print(f"⚠️  Route warning: {first_hop} and {to_station} are not mesh neighbors, bundle may be delayed")
+                    return ["ISS", first_hop, to_station]
         
         # Build adjacency list from mesh connections
         adjacency = {}
@@ -431,8 +435,7 @@ class DTNBundleManager:
             # stations currently tracking ISS (is_visible = True)
             currently_visible = [
                 sid for sid in self.stations.keys() 
-                if (sid != from_station or from_station == sid) and # Allow current station
-                (sid not in visited or sid == from_station) and
+                if (sid not in visited or sid == from_station) and
                 station_lookup.get(sid, {}).get("is_visible", False)
             ]
             
@@ -445,10 +448,10 @@ class DTNBundleManager:
                 target_station = currently_visible[0]
             else:
                 # stations with upcoming passes
+                # Allow from_station to be included even if in visited (it's our starting point)
                 upcoming_pass_stations = [
                     sid for sid in self.stations.keys() 
-                    if (sid != from_station or from_station == sid) and # Allow current station
-                    (sid not in visited or sid == from_station) and
+                    if (sid not in visited or sid == from_station) and
                     station_lookup.get(sid, {}).get("next_pass_minutes", 999999) > 0
                 ]
                 if not upcoming_pass_stations:
@@ -458,7 +461,6 @@ class DTNBundleManager:
                 target_station = upcoming_pass_stations[0]  # Route to station with soonest pass
         
         # BFS to find route
-        from collections import deque
         queue = deque([(from_station, [from_station])])
         visited_set = set(visited + [from_station])
         
@@ -565,7 +567,6 @@ class DTNBundleManager:
                 
                 # Return the first fragment bundle (for API compatibility)
                 bundle = fragment_bundles[0]
-                print(f"   Created {fragment_count} fragment bundles (IDs: {', '.join([f[:8] for f in [fb.bundle_id for fb in fragment_bundles]])})")
             else:
                 # Step 4: Create bundle (non-fragmented)
                 bundle = DTNBundle(
@@ -778,6 +779,12 @@ class DTNBundleManager:
                     print(f"   Total retry attempts: {transmission.retransmission_count}")
                     bundle.status = BundleStatus.EXPIRED
                     self._mark_bundle_failed(bundle_id, "contact_lost_max_retries")
+                    # Remove from sender queue so it doesn't linger indefinitely.
+                    if from_station and bundle_id in self.station_queues.get(from_station, []):
+                        self.station_queues[from_station].remove(bundle_id)
+                    # Clear any retry tracking for this bundle.
+                    if bundle_id in self.bundle_retry_counts:
+                        del self.bundle_retry_counts[bundle_id]
                 
                 del self.active_transmissions[transmission_key]
                 continue
@@ -854,9 +861,10 @@ class DTNBundleManager:
         if bundle.bab:
             # Pass the correct to_station (receiver) for BAB verification
             # The BAB was created with from_station -> to_station, so we need to verify with the same parameters
-            # Create bundle dict without BAB for verification (BAB shouldn't be in the message used for verification)
+            # Create bundle dict without BAB for verification
             bundle_dict_for_verification = bundle.to_dict()
             bundle_dict_for_verification["payload_hash"] = bundle.payload_hash  # Ensure payload_hash is included
+            bundle_dict_for_verification["bab"] = None  # Remove BAB from verification dict - BAB is verified separately
             bab_valid = self.bsp_security.verify_bab(
                 bundle_dict_for_verification, bundle.bab, from_station, to_station
             )
@@ -1074,12 +1082,9 @@ class DTNBundleManager:
                 
                 # Auto-decrypt broadcast messages from ISS ONLY when ALL stations have received it
                 if from_station.upper() != "ISS" and bundle.source_station.upper() == "ISS":
-                    # Check if all stations have received this broadcast
                     if self.check_all_stations_received_broadcast(bundle_id):
-                        # Decrypt for ALL stations that have received it
                         for station_id in self.broadcast_received[bundle_id]:
                             if station_id.upper() != "ISS":  # Don't decrypt for ISS
-                                # Check if already decrypted for this station
                                 if station_id in self.station_decrypted_messages:
                                     if not any(m["bundle_id"] == bundle_id for m in self.station_decrypted_messages[station_id]):
                                         decrypted = self.decrypt_bundle_for_broadcast(bundle_id, station_id)
@@ -1135,14 +1140,23 @@ class DTNBundleManager:
                 print(f"📨 Bundle {bundle_id[:8]} ACK received - custody transferred to {from_station.upper()}")
                 print(f"   Path so far: {' → '.join(bundle.hops)}")
             
-            # If route exists and we're not at final destination, prepare for next hop forwarding
+            # If route exists, determine next hop using current custodian position (not hops length)
             if bundle.route and len(bundle.route) > 0:
-                current_index = len(bundle.hops) - 1  
-                if current_index < len(bundle.route) - 1:
+                # Find current custodian's position in route
+                try:
+                    current_index = bundle.route.index(bundle.current_custodian)
+                except ValueError:
+                    # Current custodian not in planned route - path diverged
+                    current_index = -1
+                
+                if current_index >= 0 and current_index < len(bundle.route) - 1:
                     # Not at final destination yet - route will be used for forwarding
                     next_hop = bundle.route[current_index + 1]
                     print(f"   Route: {' → '.join(bundle.route)}")
                     print(f"   Next hop: {next_hop}")
+                elif current_index < 0:
+                    # Path diverged from planned route - log for debugging
+                    print(f"   Route: {' → '.join(bundle.route)} (path diverged, custodian {bundle.current_custodian} not in route)")
         
         return True
     
@@ -1252,7 +1266,10 @@ class DTNBundleManager:
             bundle.status = BundleStatus.EXPIRED
             self._mark_bundle_failed(bundle_id, "checksum_mismatch_max_retries")
             # Remove from queue
-            if bundle_id in self.station_queues[to_station]:
+            if to_station and to_station.upper() == "ISS":
+                if bundle_id in self.iss_queue:
+                    self.iss_queue.remove(bundle_id)
+            elif to_station in self.station_queues and bundle_id in self.station_queues[to_station]:
                 self.station_queues[to_station].remove(bundle_id)
             return False
     
@@ -1271,45 +1288,46 @@ class DTNBundleManager:
             if pending_ack.is_timed_out():
                 print(f"⏰ Bundle {actual_bundle_id[:8]} ACK timeout (>{pending_ack.timeout_seconds}s)")
                 
+                # Check if contact is still available for retransmission (before incrementing retry count)
+                from_station = pending_ack.from_station
+                is_contact_available = True
+                
+                if pending_ack.to_station == "ISS":
+                    is_contact_available = station_contact_states.get(from_station, False)
+                
+                if not is_contact_available:
+                    # Contact lost - just reset timeout and wait, don't count as retry attempt
+                    print(f"   Contact lost, will retry when contact restored (not counting as retry)")
+                    pending_ack.transmitted_at = now  # Reset timeout
+                    continue
+                
+                # Contact available - now increment retry count and check if we can retry
                 pending_ack.retransmission_count += 1
                 print(f"   Retry attempt: {pending_ack.retransmission_count}/{pending_ack.max_retries}")
                 
                 if pending_ack.can_retry():
-                    # Check if contact is still available for retransmission
-                    from_station = pending_ack.from_station
-                    is_contact_available = True
+                    # Proceed with retransmission
+                    retry_count = pending_ack.retransmission_count
+                    print(f"🔄 Retransmitting bundle {actual_bundle_id[:8]} to {pending_ack.to_station} (attempt {retry_count})")
+                    del self.pending_acknowledgments[pending_key]
                     
-                    if pending_ack.to_station == "ISS":
-                        is_contact_available = station_contact_states.get(from_station, False)
+                    # Reset bundle status and prepare for retransmission
+                    if actual_bundle_id in self.bundles:
+                        bundle = self.bundles[actual_bundle_id]
+                        bundle.status = BundleStatus.QUEUED
+                        bundle.forwarded_to = None
+                        
+                        # Update DB
+                        self.db_manager.update_bundle_status(
+                            bundle_id=actual_bundle_id,
+                            status=BundleStatus.QUEUED.value,
+                            forwarded_to=None
+                        )
+                        
+                        # Store retry count for when transmission starts
+                        self.bundle_retry_counts[actual_bundle_id] = retry_count
                     
-                    if is_contact_available:
-                        # Retransmit - preserve retry count
-                        retry_count = pending_ack.retransmission_count
-                        print(f"🔄 Retransmitting bundle {actual_bundle_id[:8]} to {pending_ack.to_station} (attempt {retry_count})")
-                        del self.pending_acknowledgments[pending_key]
-                        
-                        # Reset bundle status and prepare for retransmission
-                        if actual_bundle_id in self.bundles:
-                            bundle = self.bundles[actual_bundle_id]
-                            bundle.status = BundleStatus.QUEUED
-                            bundle.forwarded_to = None
-                            
-                            # Update DB
-                            self.db_manager.update_bundle_status(
-                                bundle_id=actual_bundle_id,
-                                status=BundleStatus.QUEUED.value,
-                                forwarded_to=None
-                            )
-                            
-                            # Store retry count for when transmission starts
-                            self.bundle_retry_counts[actual_bundle_id] = retry_count
-                        
-                        retransmitted.append((actual_bundle_id, retry_count, pending_ack.data_rate_bps))
-                    else:
-                        # Contact lost, keep waiting (don't count as retry yet)
-                        print(f"   Contact lost, will retry when contact restored")
-                        pending_ack.retransmission_count -= 1  # Don't count this as a retry
-                        pending_ack.transmitted_at = now  # Reset timeout
+                    retransmitted.append((actual_bundle_id, retry_count, pending_ack.data_rate_bps))
                 else:
                     # Max retries exceeded
                     print(f"❌ Bundle {actual_bundle_id[:8]} FAILED - max retries exceeded (ACK timeout)")
@@ -1319,9 +1337,12 @@ class DTNBundleManager:
                         bundle = self.bundles[actual_bundle_id]
                         bundle.status = BundleStatus.EXPIRED
                         self._mark_bundle_failed(actual_bundle_id, "ack_timeout_max_retries")
-                        # Remove from queue
-                        if actual_bundle_id in self.station_queues.get(pending_ack.from_station, []):
-                            self.station_queues[pending_ack.from_station].remove(actual_bundle_id)
+                        # Remove from queue (safely handle ISS or missing station)
+                        if from_station and from_station.upper() == "ISS":
+                            if actual_bundle_id in self.iss_queue:
+                                self.iss_queue.remove(actual_bundle_id)
+                        elif actual_bundle_id in self.station_queues.get(from_station, []):
+                            self.station_queues[from_station].remove(actual_bundle_id)
         
         return retransmitted
     
@@ -1370,10 +1391,13 @@ class DTNBundleManager:
                 bundles.append(bundle_dict)
         return bundles
     
-    def get_pending_acks(self) -> List[Dict]:
-        """Get and clear pending ACKs"""
+    def get_pending_acks(self, clear: bool = True) -> List[Dict]:
+        """
+        Get pending ACKs to be sent.
+        """
         acks = self.pending_acks.copy()
-        self.pending_acks.clear()
+        if clear:
+            self.pending_acks.clear()
         return acks
     
     def queue_ack(self, ack: Dict) -> None:
@@ -1385,15 +1409,29 @@ class DTNBundleManager:
         """Get all bundles in a station's queue"""
         bundle_ids = self.station_queues.get(station_id, [])
         bundles = []
+        to_remove = []
         
         for bid in bundle_ids:
             if bid in self.bundles:
                 bundle = self.bundles[bid]
+                # Hide/prune bundles that are already in a terminal state (e.g., max retries exceeded).
+                if bundle.status in [BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
+                    to_remove.append(bid)
+                    continue
+
                 if not bundle.is_expired():
                     bundles.append(bundle.to_dict())
                 else:
                     # Mark as expired
                     bundle.status = BundleStatus.EXPIRED
+                    to_remove.append(bid)
+        
+        # Prune expired/delivered bundles from the station queue to avoid "stuck" entries.
+        if to_remove:
+            q = self.station_queues.get(station_id, [])
+            for bid in to_remove:
+                if bid in q:
+                    q.remove(bid)
         
         # Sort by priority (expedited first)
         priority_order = {"EXPEDITED": 0, "NORMAL": 1, "BULK": 2}
@@ -1426,7 +1464,7 @@ class DTNBundleManager:
         ]
     
     def cleanup_expired(self):
-        """Remove expired bundles from all queues"""
+        """Remove expired bundles from all queues and related state"""
         for bundle_id, bundle in list(self.bundles.items()):
             # Skip bundles that are already delivered or expired
             if bundle.is_expired() and bundle.status not in [BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
@@ -1443,6 +1481,26 @@ class DTNBundleManager:
                 # Remove from ISS queue too
                 if bundle_id in self.iss_queue:
                     self.iss_queue.remove(bundle_id)
+                
+                # Remove from active transmissions
+                transmission_keys_to_remove = [
+                    key for key in self.active_transmissions.keys()
+                    if key == bundle_id or key.startswith(f"{bundle_id}:")
+                ]
+                for key in transmission_keys_to_remove:
+                    del self.active_transmissions[key]
+                
+                # Remove from pending acknowledgments
+                pending_keys_to_remove = [
+                    key for key in self.pending_acknowledgments.keys()
+                    if key == bundle_id or key.startswith(f"{bundle_id}:")
+                ]
+                for key in pending_keys_to_remove:
+                    del self.pending_acknowledgments[key]
+                
+                # Clear retry count tracking
+                if bundle_id in self.bundle_retry_counts:
+                    del self.bundle_retry_counts[bundle_id]
                 
                 # Mark as failed if not already tracked
                 if bundle_id not in self.failed_bundles:
@@ -1493,8 +1551,10 @@ class DTNBundleManager:
         iss_bundles.sort(key=lambda b: b.get("delivered_at", ""), reverse=True)
         return iss_bundles
     
-    def get_fragment_status(self, bundle_id: str) -> Optional[Dict]:
-        """Get fragment status for a bundle (works with parent_bundle_id for fragmented bundles)"""
+    def get_fragment_status(self, bundle_id: str, destination: Optional[str] = None) -> Optional[Dict]:
+        """
+        Get fragment status for a bundle.
+        """
         # Check if this is a fragment ID or parent ID
         if "-frag-" in bundle_id:
             parent_id = bundle_id.split("-frag-")[0]
@@ -1506,26 +1566,31 @@ class DTNBundleManager:
         fragment_count = 0
         
         for bid, bundle in self.bundles.items():
-            if bundle.destination_station.upper() == "ISS":
-                if bundle.is_fragmented:
-                    frag_parent = bid.split("-frag-")[0] if "-frag-" in bid else bid
-                    if frag_parent == parent_id:
-                        fragment_count = max(fragment_count, bundle.fragment_count)
-                        fragments.append({
-                            "fragment_number": bundle.fragment_number,
-                            "fragment_id": bid,
-                            "status": "DELIVERED" if bundle.status == BundleStatus.DELIVERED else "PENDING",
-                            "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None
-                        })
-                elif not bundle.is_fragmented and bid == parent_id:
-                    # Non-fragmented bundle
+            # Apply destination filter if specified
+            if destination is not None and bundle.destination_station.upper() != destination.upper():
+                continue
+            
+            if bundle.is_fragmented:
+                frag_parent = bid.split("-frag-")[0] if "-frag-" in bid else bid
+                if frag_parent == parent_id:
+                    fragment_count = max(fragment_count, bundle.fragment_count)
                     fragments.append({
-                        "fragment_number": 0,
+                        "fragment_number": bundle.fragment_number,
                         "fragment_id": bid,
                         "status": "DELIVERED" if bundle.status == BundleStatus.DELIVERED else "PENDING",
-                        "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None
+                        "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None,
+                        "destination": bundle.destination_station
                     })
-                    fragment_count = 1
+            elif not bundle.is_fragmented and bid == parent_id:
+                # Non-fragmented bundle
+                fragments.append({
+                    "fragment_number": 0,
+                    "fragment_id": bid,
+                    "status": "DELIVERED" if bundle.status == BundleStatus.DELIVERED else "PENDING",
+                    "delivered_at": bundle.delivered_at.isoformat() if bundle.delivered_at else None,
+                    "destination": bundle.destination_station
+                })
+                fragment_count = 1
         
         if not fragments:
             return None
@@ -1552,8 +1617,8 @@ class DTNBundleManager:
         else:
             parent_id = bundle_id
         
-        # Check fragment status
-        fragment_status = self.get_fragment_status(parent_id)
+        # Check fragment status (ISS-specific)
+        fragment_status = self.get_fragment_status(parent_id, destination="ISS")
         if not fragment_status or not fragment_status["is_complete"]:
             return None
         
@@ -1808,11 +1873,6 @@ class DTNBundleManager:
             ttl_hours=ttl_hours
         )
         
-        # Save to DB
-        bundle_dict = bundle.to_dict()
-        bundle_dict["encrypted_payload"] = bundle.encrypted_payload
-        self.db_manager.save_bundle(bundle_dict)
-        
         print(f"📤 ISS created reply bundle {bundle.bundle_id[:8]} to {destination_station}")
         
         return bundle
@@ -1838,13 +1898,25 @@ class DTNBundleManager:
     def get_iss_queue(self) -> List[Dict]:
         """Get all bundles in ISS queue"""
         bundles = []
+        to_remove = []
         for bid in self.iss_queue:
             if bid in self.bundles:
                 bundle = self.bundles[bid]
+                # Hide/prune bundles that are already in a terminal state (e.g., max retries exceeded).
+                if bundle.status in [BundleStatus.DELIVERED, BundleStatus.EXPIRED]:
+                    to_remove.append(bid)
+                    continue
+
                 if not bundle.is_expired():
                     bundles.append(bundle.to_dict())
                 else:
                     bundle.status = BundleStatus.EXPIRED
+                    to_remove.append(bid)
+        
+        if to_remove:
+            for bid in to_remove:
+                if bid in self.iss_queue:
+                    self.iss_queue.remove(bid)
         
         priority_order = {"EXPEDITED": 0, "NORMAL": 1, "BULK": 2}
         bundles.sort(key=lambda b: priority_order.get(b["priority"], 99))

@@ -135,7 +135,10 @@ export interface OrbitalData {
 }
 
 export const useOrbitalTracking = () => {
-  const WS_URL = 'ws://localhost:8000/ws/orbital_tracking';
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const wsHost = import.meta.env.DEV ? `${window.location.hostname}:8000` : window.location.host;
+  const basePath = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  const WS_URL = `${protocol}://${wsHost}${basePath}/ws/orbital_tracking`;
   const { isConnected, lastMessage } = useWebSocket(WS_URL);
   
   const [orbitalData, setOrbitalData] = useState<OrbitalData | null>(null);
