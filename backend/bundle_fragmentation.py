@@ -53,8 +53,8 @@ class BundleFragmentationManager:
     
     # Maximum fragment size
 
-    MAX_FRAGMENT_SIZE = 4096  # 4KB per fragment - adjust for testing
-    FRAGMENT_HEADER_SIZE = 4094  # Estimated header overhead per fragment
+    MAX_FRAGMENT_SIZE = 2048  # 4KB per fragment - adjust for testing
+    FRAGMENT_HEADER_SIZE = 1000  # Estimated header overhead per fragment
     
     def __init__(self):
         self.fragments: Dict[str, List[BundleFragment]] = {}  # parent_bundle_id -> fragments
