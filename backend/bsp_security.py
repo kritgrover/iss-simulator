@@ -5,6 +5,7 @@ Provides data integrity, authentication, and confidentiality for DTN bundles.
 import hashlib
 import hmac
 import json
+import time
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass, field
 from enum import Enum
@@ -101,6 +102,12 @@ class BSPSecurityManager:
     def __init__(self):
         self.backend = default_backend()
         self.station_keys: Dict[str, bytes] = {}
+        self.last_timing: Dict[str, float] = {
+            "encrypt_ms": 0.0,
+            "decrypt_ms": 0.0,
+            "bab_create_ms": 0.0,
+            "pib_create_ms": 0.0,
+        }
     
     def _derive_key(self, station_id: str, salt: Optional[bytes] = None) -> bytes:
         """Derive encryption key for a station"""
@@ -131,6 +138,7 @@ class BSPSecurityManager:
         Returns: (encrypted_payload_base64, PCB)
         """
         try:
+            t0 = time.perf_counter()
             # Convert payload to bytes
             plaintext = payload.encode('utf-8')
             
@@ -167,6 +175,7 @@ class BSPSecurityManager:
                 iv=iv_base64
             )
             
+            self.last_timing["encrypt_ms"] = (time.perf_counter() - t0) * 1000
             return encrypted_payload, pcb
             
         except Exception as e:
@@ -211,6 +220,7 @@ class BSPSecurityManager:
         Ensures authenticity and integrity between forwarding SA node and receiving SA node
         """
         try:
+            t0 = time.perf_counter()
             # Create message to authenticate (bundle metadata + encrypted payload hash)
             message = json.dumps({
                 "bundle_id": bundle_data.get("bundle_id"),
@@ -233,6 +243,7 @@ class BSPSecurityManager:
                 key_id=f"{from_station}-key"
             )
             
+            self.last_timing["bab_create_ms"] = (time.perf_counter() - t0) * 1000
             return bab
             
         except Exception as e:
@@ -280,6 +291,7 @@ class BSPSecurityManager:
         Ensures integrity of payload by verifying the signer
         """
         try:
+            t0 = time.perf_counter()
             # Sign the payload hash
             key = self._derive_key(source_station)
             signature_bytes = hmac.new(key, payload_hash.encode('utf-8'), hashlib.sha256).digest()
@@ -292,6 +304,7 @@ class BSPSecurityManager:
                 signer=source_station
             )
             
+            self.last_timing["pib_create_ms"] = (time.perf_counter() - t0) * 1000
             return pib
             
         except Exception as e:
