@@ -26,3 +26,4 @@ dist-ssr
 **/__pycache__
 backend/iss_tle_cache.txt
 backend/dtn_bundles.db
+backend/experiment_results
