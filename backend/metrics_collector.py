@@ -41,6 +41,16 @@ class BundleMetrics:
     bab_time_ms: float = 0.0
     security_overhead_bytes: int = 0
 
+    # Network-level timing (Mininet only, defaults for simulation)
+    network_rtt_ms: float = 0.0
+    network_send_success: Optional[bool] = None
+    network_send_count: int = 0
+    network_success_count: int = 0
+    network_failure_count: int = 0
+    tc_configured_loss_pct: float = 0.0
+    tc_configured_bw_mbps: float = 0.0
+    tc_configured_delay_ms: float = 0.0
+
     @property
     def delivery_latency_sec(self) -> Optional[float]:
         if self.delivered_at is not None and self.created_at:
@@ -68,9 +78,17 @@ class ExperimentSummary:
     avg_security_overhead_bytes: float
     effective_throughput_bps: float
     duration_sec: float
+    # Network-level aggregates (Mininet only, 0.0 for simulation)
+    avg_network_rtt_ms: float = 0.0
+    median_network_rtt_ms: float = 0.0
+    p95_network_rtt_ms: float = 0.0
+    total_network_sends: int = 0
+    total_network_successes: int = 0
+    network_delivery_ratio: float = 0.0
+    observed_loss_rate: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "experiment_name": self.experiment_name,
             "total_bundles": self.total_bundles,
             "delivered_count": self.delivered_count,
@@ -90,6 +108,17 @@ class ExperimentSummary:
             "effective_throughput_bps": round(self.effective_throughput_bps, 2),
             "duration_sec": round(self.duration_sec, 2),
         }
+        if self.total_network_sends > 0:
+            d.update({
+                "avg_network_rtt_ms": round(self.avg_network_rtt_ms, 2),
+                "median_network_rtt_ms": round(self.median_network_rtt_ms, 2),
+                "p95_network_rtt_ms": round(self.p95_network_rtt_ms, 2),
+                "total_network_sends": self.total_network_sends,
+                "total_network_successes": self.total_network_successes,
+                "network_delivery_ratio": round(self.network_delivery_ratio, 4),
+                "observed_loss_rate": round(self.observed_loss_rate, 4),
+            })
+        return d
 
 
 class MetricsCollector:
@@ -197,6 +226,25 @@ class MetricsCollector:
             m.bab_time_ms = bab_time_ms
             m.security_overhead_bytes = overhead_bytes
 
+    def on_network_send_measured(self, bundle_id: str, rtt_ms: float,
+                                 success: bool, tc_loss: float = 0.0,
+                                 tc_bw: float = 0.0, tc_delay: float = 0.0) -> None:
+        """Record network-level timing from a Mininet TCP send."""
+        if not self._enabled:
+            return
+        m = self._metrics.get(bundle_id)
+        if m:
+            m.network_rtt_ms = rtt_ms
+            m.network_send_success = success
+            m.network_send_count += 1
+            if success:
+                m.network_success_count += 1
+            else:
+                m.network_failure_count += 1
+            m.tc_configured_loss_pct = tc_loss
+            m.tc_configured_bw_mbps = tc_bw
+            m.tc_configured_delay_ms = tc_delay
+
     # ---- Summaries ----
 
     def _percentile(self, sorted_data: List[float], pct: float) -> float:
@@ -223,6 +271,12 @@ class MetricsCollector:
         total_payload_delivered = sum(m.plaintext_size for m in delivered)
         effective_throughput = (total_payload_delivered * 8 / duration) if duration > 0 else 0.0
 
+        # Network-level aggregates (non-zero only in Mininet mode)
+        total_net_sends = sum(m.network_send_count for m in all_metrics)
+        total_net_successes = sum(m.network_success_count for m in all_metrics)
+        net_rtts = sorted([m.network_rtt_ms for m in all_metrics if m.network_rtt_ms > 0])
+        total_net_failures = sum(m.network_failure_count for m in all_metrics)
+
         return ExperimentSummary(
             experiment_name=self.experiment_name,
             total_bundles=total,
@@ -242,6 +296,13 @@ class MetricsCollector:
             avg_security_overhead_bytes=mean([m.security_overhead_bytes for m in all_metrics]) if all_metrics else 0.0,
             effective_throughput_bps=effective_throughput,
             duration_sec=duration,
+            avg_network_rtt_ms=mean(net_rtts) if net_rtts else 0.0,
+            median_network_rtt_ms=median(net_rtts) if net_rtts else 0.0,
+            p95_network_rtt_ms=self._percentile(net_rtts, 95) if net_rtts else 0.0,
+            total_network_sends=total_net_sends,
+            total_network_successes=total_net_successes,
+            network_delivery_ratio=total_net_successes / total_net_sends if total_net_sends > 0 else 0.0,
+            observed_loss_rate=total_net_failures / total_net_sends if total_net_sends > 0 else 0.0,
         )
 
     # ---- Export ----
@@ -256,6 +317,9 @@ class MetricsCollector:
             "security_overhead_bytes", "encrypt_time_ms", "pib_time_ms", "bab_time_ms",
             "retransmissions", "custody_acks", "custody_naks",
             "fragmented", "fragment_count", "custody_transfer",
+            "network_rtt_ms", "network_send_count", "network_success_count",
+            "network_failure_count", "tc_configured_loss_pct",
+            "tc_configured_bw_mbps", "tc_configured_delay_ms",
         ]
         with open(path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -287,6 +351,13 @@ class MetricsCollector:
                     "fragmented": m.fragmented,
                     "fragment_count": m.fragment_count,
                     "custody_transfer": m.custody_transfer,
+                    "network_rtt_ms": m.network_rtt_ms,
+                    "network_send_count": m.network_send_count,
+                    "network_success_count": m.network_success_count,
+                    "network_failure_count": m.network_failure_count,
+                    "tc_configured_loss_pct": m.tc_configured_loss_pct,
+                    "tc_configured_bw_mbps": m.tc_configured_bw_mbps,
+                    "tc_configured_delay_ms": m.tc_configured_delay_ms,
                 })
 
     def export_summary_csv(self, path: str) -> None:
