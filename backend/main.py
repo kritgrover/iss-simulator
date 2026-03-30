@@ -1004,6 +1004,42 @@ async def create_iss_reply(request: ISSReplyRequest):
         traceback.print_exc()
         return {"success": False, "error": str(e)}
 
+# ---------------------------------------------------------------------------
+# Metrics API (works in both simulation and Mininet modes)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/metrics/summary")
+async def get_metrics_summary():
+    """Return current experiment metrics summary."""
+    try:
+        summary = dtn_manager.metrics.compute_summary()
+        return {"success": True, "summary": summary.to_dict()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/metrics/export")
+async def export_metrics():
+    """Export per-bundle CSV and summary CSV to experiment_results/."""
+    try:
+        results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "experiment_results")
+        os.makedirs(results_dir, exist_ok=True)
+        bundle_csv = os.path.join(results_dir, "live_bundles.csv")
+        summary_csv = os.path.join(results_dir, "live_summary.csv")
+        dtn_manager.metrics.export_bundle_csv(bundle_csv)
+        dtn_manager.metrics.export_summary_csv(summary_csv)
+        return {"success": True, "bundle_csv": bundle_csv, "summary_csv": summary_csv}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/metrics/reset")
+async def reset_metrics():
+    """Reset all collected metrics (starts a fresh session)."""
+    try:
+        dtn_manager.metrics.reset("live_session")
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
