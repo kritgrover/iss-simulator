@@ -9,6 +9,7 @@ from enum import Enum
 from database import DatabaseManager
 from bsp_security import BSPSecurityManager, BundleAuthenticationBlock, PayloadConfidentialityBlock, PayloadIntegrityBlock
 from bundle_fragmentation import BundleFragmentationManager, BundleFragment
+from metrics_collector import MetricsCollector
 
 class BundlePriority(str, Enum):
     EXPEDITED = "EXPEDITED"  # Red
@@ -161,7 +162,8 @@ class DTNBundleManager:
     ACK_TIMEOUT_SECONDS = 30.0
     MAX_RETRIES = 5
     
-    def __init__(self, stations: List[Dict], mesh_connections: Optional[List[Tuple[str, str]]] = None):
+    def __init__(self, stations: List[Dict], mesh_connections: Optional[List[Tuple[str, str]]] = None,
+                 db_path: Optional[str] = None):
         self.stations = {s["id"]: s["name"] for s in stations}
         self.bundles: Dict[str, DTNBundle] = {}
         self.station_queues: Dict[str, List[str]] = {sid: [] for sid in self.stations.keys()}
@@ -174,7 +176,7 @@ class DTNBundleManager:
         self.bundle_retry_counts: Dict[str, int] = {}  # Track retry counts for bundles
         self.bundle_failure_reasons: Dict[str, str] = {}  # Track why bundles failed
         self.mesh_connections = mesh_connections or []  # List of (station1, station2) tuples
-        self.db_manager = DatabaseManager()
+        self.db_manager = DatabaseManager(db_path) if db_path else DatabaseManager()
         
         # Broadcast tracking: bundle_id -> set of station_ids that have received it
         self.broadcast_received: Dict[str, set] = {}
@@ -186,6 +188,9 @@ class DTNBundleManager:
         # BSP Security and Fragmentation
         self.bsp_security = BSPSecurityManager()
         self.fragmentation_manager = BundleFragmentationManager()
+        
+        # Metrics collection (enabled by default, can be toggled)
+        self.metrics = MetricsCollector()
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
         print(f"   ACK timeout: {self.ACK_TIMEOUT_SECONDS}s, Max retries: {self.MAX_RETRIES}")
@@ -619,6 +624,29 @@ class DTNBundleManager:
                 print(f"   🔐 Security: PCB={pcb.encryption_method}, PIB=HMAC-SHA256")
                 print(f"   Checksum: 0x{bundle.checksum:08x} (CRC32)")
             
+            # Record metrics
+            plaintext_bytes = len(payload.encode('utf-8'))
+            encrypted_bytes = len(encrypted_payload.encode('utf-8'))
+            security_overhead = encrypted_bytes - plaintext_bytes + 200 + 300  # header + security block overhead
+            self.metrics.on_bundle_created(
+                bundle_id=bundle.bundle_id,
+                source=source_station,
+                destination=destination,
+                priority=priority_enum.value,
+                plaintext_size=plaintext_bytes,
+                encrypted_size=encrypted_bytes,
+                total_wire_size=bundle.size_bytes,
+                fragmented=is_fragmented,
+                fragment_count=fragment_count,
+            )
+            self.metrics.on_security_measured(
+                bundle_id=bundle.bundle_id,
+                encrypt_time_ms=self.bsp_security.last_timing.get("encrypt_ms", 0.0),
+                pib_time_ms=self.bsp_security.last_timing.get("pib_create_ms", 0.0),
+                bab_time_ms=0.0,  # BAB is created per-hop at transmission time
+                overhead_bytes=security_overhead,
+            )
+            
             return bundle
             
         except Exception as e:
@@ -1050,12 +1078,17 @@ class DTNBundleManager:
                     else:
                         print(f"❌ Decryption failed for {bundle_id} at {from_station}")
             
+            # Record delivery in metrics
+            self.metrics.on_bundle_delivered(bundle_id, bundle.hops)
+            
             print(f"🎯 Bundle {bundle_id[:8]} ACK received - DELIVERED to {from_station}")
             print(f"   Total delivery time: {total_time:.1f}s ({total_time/60:.1f} min)")
             print(f"   Complete path: {' → '.join(bundle.hops)}")
             
         else:
             # Custody accepted by another station
+            self.metrics.on_ack_received(bundle_id)
+            
             bundle.status = BundleStatus.QUEUED
             previous_custodian = bundle.current_custodian
             bundle.current_custodian = from_station
@@ -1229,6 +1262,8 @@ class DTNBundleManager:
         expected_checksum = nak_data.get("expected_checksum")
         received_checksum = nak_data.get("received_checksum")
         
+        self.metrics.on_nak_received(bundle_id)
+        
         print(f"📥 NAK received for bundle {bundle_id[:8]} from {from_station}")
         print(f"   Reason: {nak_data.get('reason', 'unknown')}")
         if expected_checksum is not None and received_checksum is not None:
@@ -1307,6 +1342,7 @@ class DTNBundleManager:
                 
                 if pending_ack.can_retry():
                     # Proceed with retransmission
+                    self.metrics.on_retransmission(actual_bundle_id)
                     retry_count = pending_ack.retransmission_count
                     print(f"🔄 Retransmitting bundle {actual_bundle_id[:8]} to {pending_ack.to_station} (attempt {retry_count})")
                     del self.pending_acknowledgments[pending_key]
@@ -1366,6 +1402,7 @@ class DTNBundleManager:
     
     def _mark_bundle_failed(self, bundle_id: str, reason: str) -> None:
         """Mark a bundle as failed and track it"""
+        self.metrics.on_bundle_failed(bundle_id, reason)
         if bundle_id not in self.failed_bundles:
             self.failed_bundles.append(bundle_id)
             # Keep only last 50 failed bundles

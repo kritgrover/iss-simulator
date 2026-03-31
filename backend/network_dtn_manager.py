@@ -212,6 +212,24 @@ class NetworkDTNManager(DTNBundleManager):
         if bundle_id in self.bundles:
             self.process_nak(bundle_id, nak_data)
     
+    def _get_current_tc_params(self, from_node: str, to_node: str) -> tuple:
+        """Look up the current tc link parameters for a given hop."""
+        tc_loss, tc_bw, tc_delay = 0.0, 0.0, 0.0
+        if not self.topology:
+            return tc_loss, tc_bw, tc_delay
+        involves_iss = from_node.lower() == 'iss' or to_node.lower() == 'iss'
+        if involves_iss:
+            station_id = to_node if from_node.lower() == 'iss' else from_node
+            link_info = self.topology.iss_links.get(station_id, {})
+            tc_bw = link_info.get('bandwidth_mbps', 0.0)
+            tc_delay = link_info.get('delay_ms', 0.0)
+            tc_loss = link_info.get('loss_percent', 0.0)
+        else:
+            tc_bw = getattr(self.topology, 'GROUND_BANDWIDTH_MBPS', 100.0)
+            tc_delay = getattr(self.topology, 'GROUND_DELAY_MS', 50.0)
+            tc_loss = getattr(self.topology, 'GROUND_LOSS_PERCENT', 10.0)
+        return tc_loss, tc_bw, tc_delay
+
     def send_bundle_over_network(self, bundle_id: str, from_node: str, to_node: str) -> bool:
         """
         Send bundle over network using TCP socket from within source node's namespace
@@ -290,22 +308,31 @@ class NetworkDTNManager(DTNBundleManager):
             shlex.quote(payload_hash) if payload_hash != "null" else "null"
         )
         
+        # Snapshot current tc parameters before the send
+        tc_loss, tc_bw, tc_delay = self._get_current_tc_params(from_node, to_node)
+        
         try:
             # Get lock for this source node to prevent concurrent cmd() calls
             # Mininet's cmd() is NOT thread-safe
             node_lock = self._get_node_lock(from_node)
             
+            t0 = time.perf_counter()
             with node_lock:
                 # Run client script within source node's namespace
                 # This ensures the socket connection uses the node's network namespace
                 # cmd() runs synchronously and captures stdout/stderr
                 result = source_node.cmd(cmd)
+            rtt_ms = (time.perf_counter() - t0) * 1000.0
             
             # Check result output for success/failure indicators
             result_lower = result.lower()
             
             # Check for success indicators
             if '✅ ack received' in result_lower or 'ack received' in result_lower:
+                # Record network-level metrics
+                self.metrics.on_network_send_measured(
+                    bundle_id, rtt_ms, True, tc_loss, tc_bw, tc_delay)
+
                 # Bundle was successfully sent and ACK received
                 # Check if this is the final destination (ISS or the target ground station)
                 is_final_destination = (
@@ -367,6 +394,10 @@ class NetworkDTNManager(DTNBundleManager):
                     error_reason = 'transmission_error'
                     error_details.append("Bundle lost or transmission error occurred")
                 
+                # Record network-level metrics (failure)
+                self.metrics.on_network_send_measured(
+                    bundle_id, rtt_ms, False, tc_loss, tc_bw, tc_delay)
+
                 # Log detailed failure information
                 print("❌ Transmission FAILED for bundle {}: {}".format(bundle_id[:8], failure_category.upper().replace('_', ' ')))
                 print("   Reason: {}".format(error_reason))
@@ -395,6 +426,8 @@ class NetworkDTNManager(DTNBundleManager):
             # If we can't determine from output, check if command completed
             if not result or len(result.strip()) == 0:
                 failure_category = 'bundle_lost'
+                self.metrics.on_network_send_measured(
+                    bundle_id, rtt_ms, False, tc_loss, tc_bw, tc_delay)
                 print("❌ Transmission FAILED for bundle {}: {}".format(bundle_id[:8], failure_category.upper().replace('_', ' ')))
                 print("   Reason: No response from client script (possible timeout, crash, or bundle lost)")
                 
@@ -404,11 +437,14 @@ class NetworkDTNManager(DTNBundleManager):
                 
                 return False
             
+            self.metrics.on_network_send_measured(
+                bundle_id, rtt_ms, True, tc_loss, tc_bw, tc_delay)
             print("⚠️  Could not parse client output for bundle {}, assuming success".format(bundle_id[:8]))
             print("   Output: {}".format(result.strip()[:200]))
             return True
                 
         except Exception as e:
+            rtt_ms = 0.0
             error_type = type(e).__name__
             error_msg = str(e)
             error_msg_lower = error_msg.lower()
@@ -421,6 +457,9 @@ class NetworkDTNManager(DTNBundleManager):
             elif 'network' in error_msg_lower or 'route' in error_msg_lower or 'unreachable' in error_msg_lower:
                 failure_category = 'link_down'
             
+            self.metrics.on_network_send_measured(
+                bundle_id, rtt_ms, False, tc_loss, tc_bw, tc_delay)
+
             print("❌ Transmission FAILED for bundle {}: {}".format(
                 bundle_id[:8], failure_category.upper().replace('_', ' ')
             ))
