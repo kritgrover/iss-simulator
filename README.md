@@ -140,6 +140,28 @@ source venv/bin/activate   # Windows Git Bash: source venv/Scripts/activate
 
 Use `--experiment E4` (or `E4_STANDALONE`) for **BSP-only** encrypt/PIB/BAB timing and payload overhead CSV (`E4_security_overhead.csv`), without a full bundle simulation loop.
 
+### Mininet experiments (`mininet_experiment_runner.py`)
+
+**What it does:** Brings up the real **Mininet** topology (`NetworkDTNManager`, TCP between nodes, **tc**-shaped ISS and ground links). Contact is modeled on a **deterministic wall-clock schedule** (link up/down), so experiments reflect actual socket traffic and RTT/loss statistics from the collector.
+
+**Requirements:** **Linux or WSL2**, Mininet installed ([Mininet Setup](#mininet-setup)), and **root** so Mininet and Open vSwitch can run:
+
+```bash
+cd backend
+sudo -E python3 mininet_experiment_runner.py --list
+```
+
+(`sudo -E` preserves environment variables such as `PATH` or a venv if needed.)
+
+| Command | Behavior |
+|--------|----------|
+| `sudo -E python3 mininet_experiment_runner.py` | **Default:** runs **E8** Mininet baseline (≈20 bundles, comparable in spirit to simulation E1). |
+| `sudo -E python3 mininet_experiment_runner.py --all` / `-a` | Runs **E8** (baseline), **E3** (packet-loss sweep 0–30%), then **E7** (DTN vs raw TCP under intermittent link). Writes `mininet_all_summaries.json`. |
+| `sudo -E python3 mininet_experiment_runner.py --experiment E3` / `-e E3` | Single experiment: **E3** loss sweep, **E7** DTN vs TCP, or **E8** baseline. |
+| `sudo -E python3 mininet_experiment_runner.py --list` / `-l` | Lists **E3**, **E7**, **E8** with one-line descriptions. |
+
+**E3** exports a combined JSON (`E3_varying_loss_combined.json`). **E7** writes `E7_dtn_vs_tcp.json`. Per-run bundle CSVs and `mininet_experiment_summaries.csv` are updated like the simulation runner’s outputs.
+
 ## Features
 ### Orbital Tracking
 The OrbitalTracker component (backend/orbital_tracker.py) uses the Skyfield library and SGP4 propagation to calculate the real-time position of the ISS based on Two-Line Element (TLE) sets. It predicts satellite passes for ground stations, calculates Acquisition of Signal (AOS) and Loss of Signal (LOS) times, and determines precise look angles (azimuth, elevation) and range for radio contacts.
