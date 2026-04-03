@@ -23,6 +23,9 @@ Inspired by the research on DTN for space internetworking: [NASA DTN Paper](http
 - [Running the Application](#running-the-application)
   - [Non-Mininet Mode (Simulation Only)](#non-mininet-mode-simulation-only)
   - [Mininet Mode (Network Emulation)](#mininet-mode-network-emulation)
+- [Batch experiments (evaluation runners)](#batch-experiments-evaluation-runners)
+  - [Simulation experiments (`experiment_runner.py`)](#simulation-experiments-experiment_runnerpy)
+  - [Mininet experiments (`mininet_experiment_runner.py`)](#mininet-experiments-mininet_experiment_runnerpy)
 - [Features](#features)
   - [Orbital Tracking](#orbital-tracking)
   - [Link Budget Calculator](#link-budget-calculator)
@@ -112,6 +115,31 @@ Frontend:
 ```bash
 npm run dev
 ```
+
+## Batch experiments (evaluation runners)
+
+These scripts run the DTN stack **without the web frontend** to produce repeatable metrics (delivery ratio, latency, retransmissions, hop counts, and more). Results are written under `backend/experiment_results/` (CSVs, per-experiment JSON summaries, and optional combined JSON when you run everything).
+
+### Simulation experiments (`experiment_runner.py`)
+
+**What it does:** Drives `DTNBundleManager` in pure Python using **synthetic ISS contact windows** (staggered passes, fixed orbit period). Simulated time advances quickly with no wall-clock sleep, so runs are deterministic and independent of live TLEs or `main.py`.
+
+**Requirements:** Activate the backend venv and run from `backend/` (no root, no Mininet):
+
+```bash
+cd backend
+source venv/bin/activate   # Windows Git Bash: source venv/Scripts/activate
+```
+
+| Command | Behavior |
+|--------|----------|
+| `python experiment_runner.py` | Default “quick” run: **E1** baseline simulation plus **E4** standalone BSP security-overhead benchmark. |
+| `python experiment_runner.py --all` / `-a` | Runs the full simulation suite: **E1**, custody on/off (**E2**), **E4**, fragmentation (**E5**), and scale (**E6**); writes `all_summaries.json`. Experiments are keyed **E1**, **E2_on**, **E2_off**, **E4**, **E5_frag_1k**, etc. |
+| `python experiment_runner.py --experiment E1` / `-e E1` | Single experiment: pass the id shown by `--list` (e.g. **E1**, **E2_custody_on**, **E5_frag_1k**; matching is case-insensitive). |
+| `python experiment_runner.py --list` / `-l` | Prints available experiment keys and short descriptions (includes **E4_standalone**). |
+
+Use `--experiment E4` (or `E4_STANDALONE`) for **BSP-only** encrypt/PIB/BAB timing and payload overhead CSV (`E4_security_overhead.csv`), without a full bundle simulation loop.
+
 ## Features
 ### Orbital Tracking
 The OrbitalTracker component (backend/orbital_tracker.py) uses the Skyfield library and SGP4 propagation to calculate the real-time position of the ISS based on Two-Line Element (TLE) sets. It predicts satellite passes for ground stations, calculates Acquisition of Signal (AOS) and Loss of Signal (LOS) times, and determines precise look angles (azimuth, elevation) and range for radio contacts.
