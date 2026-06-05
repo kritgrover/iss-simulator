@@ -1,5 +1,8 @@
 # ISS Communication Simulator
 
+## Associated Publication: [arXiv Link](https://arxiv.org/abs/2605.21624) (see also #how-to-cite)
+
+### Conference Presentation: [ISORC 2026](https://mcscert.github.io/isorc2026/), [Slides](https://www.canva.com/design/DAHKHKZv03s/WDXtx7XuIHjvnx4t1wGeBg/view?utlId=h0c8d706b8f)
 ### Demo Link: [ISS Simulator Demo](https://youtu.be/nzh2T8YPaEc?si=2Gu9HnW4LvIJG84V)
 
 ## Introduction
@@ -193,3 +196,19 @@ When running in Mininet mode, backend/mininet_topology.py builds a virtual netwo
 - Network Graph: A node-link diagram showing the connectivity between ground stations and the active mesh topology.
 - Message Exchange: An interface to send text messages (bundles) and watch them propagate through the network, queue at stations, and eventually be delivered.
 - Station Management: Interactive control allowing operators to switch active ground stations to inspect specific link metrics and manage local queues.
+
+## How to Cite
+### BibTeX
+```
+@misc{grover2026opensourceframeworkemulatedelay,
+      title={An Open-Source Framework to Emulate Delay and Disruption Tolerant Networks for International Space Station Communication}, 
+      author={Krit Grover and Marcelo Ponce},
+      year={2026},
+      eprint={2605.21624},
+      archivePrefix={arXiv},
+      primaryClass={cs.NI},
+      url={https://arxiv.org/abs/2605.21624}, 
+}
+```
+
+For other formats you can use websites like Scribbr and paste the arXiv link to generate the citation.
