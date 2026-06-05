@@ -1,6 +1,6 @@
 # ISS Communication Simulator
 
-## Associated Publication: [arXiv Link](https://arxiv.org/abs/2605.21624) (see also #how-to-cite)
+## Associated Publication: [arXiv Link](https://arxiv.org/abs/2605.21624) (see also [how to cite](#how-to-cite))
 
 ### Conference Presentation: [ISORC 2026](https://mcscert.github.io/isorc2026/), [Slides](https://www.canva.com/design/DAHKHKZv03s/WDXtx7XuIHjvnx4t1wGeBg/view?utlId=h0c8d706b8f)
 ### Demo Link: [ISS Simulator Demo](https://youtu.be/nzh2T8YPaEc?si=2Gu9HnW4LvIJG84V)
@@ -35,6 +35,7 @@ Inspired by the research on DTN for space internetworking: [NASA DTN Paper](http
   - [DTN Bundle Protocol](#dtn-bundle-protocol)
   - [Network Topology](#network-topology)
   - [Frontend Visualization](#frontend-visualization)
+- [How to Cite](#how-to-cite)
 
 ## Installation
 
